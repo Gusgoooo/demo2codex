@@ -24,7 +24,7 @@ codex plugin add demo2codex@demo2codex
 Open the repository in Codex and ask:
 
 ```text
-@Demo2Codex Start a demo review for this repository.
+@Demo2Codex Use start_review or read demo2codex://start-review. If unavailable, stop. Do not audit, build, run, or edit the repository.
 ```
 
 The recorder actions are exposed as both MCP tools and standard MCP resources, so the workflow can still start when custom tools are deferred.

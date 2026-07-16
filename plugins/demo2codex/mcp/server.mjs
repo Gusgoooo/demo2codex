@@ -389,7 +389,7 @@ async function handleMessage(message) {
           tools: { listChanged: false },
           resources: { subscribe: false, listChanged: false },
         },
-        serverInfo: { name: "demo2codex", version: "0.4.0" },
+        serverInfo: { name: "demo2codex", version: "0.4.1" },
         instructions: "Use start_review when the user asks to begin a demo review. Codex may defer custom MCP tools: if start_review, review_status, or finish_review is not callable, use the Demo2Codex resources through list_mcp_resources/read_mcp_resource. Read demo2codex://start-review or its repository-scoped form before claiming the recorder is unavailable. Repeated starts for the same repository resume the active session. Use finish_review (or the finish resource) to retrieve transcript evidence plus a lightweight module index. The module index only tells you which page, feature area, component, and repository paths are likely relevant; it contains no exact edit instructions, so inspect the real code yourself. User-facing output has three simple stages: recording, a collapsed read-only transcript, and an editable Chinese summary/TODO list. Each saved TODO exposes one short, direct Chinese instruction. Keep meeting evidence, module candidates, narrow scope, acceptance criteria, and open questions inside its grounding object. The UI may derive only a compact module hover hint from module candidates. Use save_review_result when callable. If it is deferred, POST the identical JSON body to the result_submission URL returned by finish_review; this is a supported plugin path and must not trigger manual session creation or a reinstall request.",
       };
     case "notifications/initialized":

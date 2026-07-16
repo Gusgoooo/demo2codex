@@ -41,6 +41,18 @@ function rpcClient(child) {
   };
 }
 
+test("plugin starter fails closed when Demo2Codex actions are unavailable", async () => {
+  const manifest = JSON.parse(
+    await readFile(path.join(pluginRoot, ".codex-plugin", "plugin.json"), "utf8"),
+  );
+  const prompt = manifest.interface.defaultPrompt[0];
+  assert.ok(prompt.length <= 128);
+  assert.match(prompt, /start_review/);
+  assert.match(prompt, /demo2codex:\/\/start-review/);
+  assert.match(prompt, /unavailable, stop/i);
+  assert.match(prompt, /do not audit, build, run, or edit/i);
+});
+
 test("MCP exposes four thin tools and completes a local review", { timeout: 20_000 }, async (t) => {
   const repoPath = await makeFixture();
   const child = spawn(process.execPath, [path.join(pluginRoot, "mcp", "server.mjs")], {
@@ -60,6 +72,7 @@ test("MCP exposes four thin tools and completes a local review", { timeout: 20_0
 
   const initialized = await rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {} });
   assert.equal(initialized.serverInfo.name, "demo2codex");
+  assert.equal(initialized.serverInfo.version, "0.4.1");
   assert.equal(initialized.capabilities.resources.listChanged, false);
   assert.match(initialized.instructions, /read demo2codex:\/\/start-review/i);
   const listed = await rpc("tools/list");

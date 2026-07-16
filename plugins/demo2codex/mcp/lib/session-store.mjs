@@ -18,6 +18,7 @@ import {
 export class SessionStore {
   constructor(options = {}) {
     this.sessions = new Map();
+    this.finishPromises = new Map();
     this.activeSessionId = null;
     const configuredRegistryPath =
       options.registryPath ||
@@ -176,7 +177,9 @@ export class SessionStore {
 
   async requestFinish(id, { waitMs = 15_000 } = {}) {
     const session = this.get(id);
-    if (session.status === "finished") return this.buildGroundedResult(session, await this.events(session));
+    const activeFinish = this.finishPromises.get(session.id);
+    if (activeFinish) return activeFinish;
+    if (session.status === "finished") return this.finish(session.id);
     if (session.recording_state === "idle" || (session.recording_state === "stopped" && session.audio_finalized)) {
       return this.finish(session.id);
     }
@@ -185,10 +188,12 @@ export class SessionStore {
     session.updated_at = isoTimestamp();
     await this.persist(session);
     const deadline = Date.now() + waitMs;
-    while (session.status !== "finished" && Date.now() < deadline) {
+    while (Date.now() < deadline) {
+      const finishing = this.finishPromises.get(session.id);
+      if (finishing) return finishing;
+      if (session.status === "finished") return this.finish(session.id);
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
-    if (session.status === "finished") return this.buildGroundedResult(session, await this.events(session));
     return {
       session_id: session.id,
       status: "finish_pending",
@@ -287,7 +292,24 @@ export class SessionStore {
 
   async finish(id, { requireFinalAudio = false } = {}) {
     const session = this.get(id);
-    if (session.status === "finished") return this.buildGroundedResult(session, await this.events(session));
+    const activeFinish = this.finishPromises.get(session.id);
+    if (activeFinish) return activeFinish;
+    const finishPromise = this.finalizeSession(session, { requireFinalAudio });
+    this.finishPromises.set(session.id, finishPromise);
+    try {
+      return await finishPromise;
+    } finally {
+      if (this.finishPromises.get(session.id) === finishPromise) {
+        this.finishPromises.delete(session.id);
+      }
+    }
+  }
+
+  async finalizeSession(session, { requireFinalAudio = false } = {}) {
+    if (session.status === "finished" && session.evidence_files) {
+      return this.buildGroundedResult(session, await this.events(session));
+    }
+    const resumingIncompleteFinish = session.status === "finished";
     if (
       requireFinalAudio &&
       session.recording_state !== "idle" &&
@@ -295,7 +317,7 @@ export class SessionStore {
     ) {
       throw new Error("The recorder has not stopped and uploaded its final audio chunk yet.");
     }
-    if (session.current_focus) {
+    if (!resumingIncompleteFinish && session.current_focus) {
       await this.addEvent(session.id, {
         type: "focus_end",
         focus_id: session.current_focus.focus_id,
@@ -305,10 +327,10 @@ export class SessionStore {
 
     session.status = "finished";
     session.recording_state = "finished";
-    session.ended_at = isoTimestamp();
+    session.ended_at ||= isoTimestamp();
     session.updated_at = session.ended_at;
     if (this.activeSessionId === session.id) this.activeSessionId = null;
-    session.audio_file = await this.combineAudio(session);
+    session.audio_file ||= await this.combineAudio(session);
 
     const events = await this.events(session);
     const result = await this.buildGroundedResult(session, events);

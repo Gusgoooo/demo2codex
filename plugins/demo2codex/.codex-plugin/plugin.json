@@ -1,6 +1,6 @@
 {
   "name": "demo2codex",
-  "version": "0.4.0+codex.20260716083544",
+  "version": "0.4.1+codex.20260716091842",
   "description": "Map demo-review feedback to relevant repository modules so the user's Codex model can produce precise Chinese TODOs.",
   "author": {
     "name": "Gusgoooo",
@@ -27,7 +27,7 @@
     ],
     "websiteURL": "https://github.com/Gusgoooo/demo2codex",
     "defaultPrompt": [
-      "Start a demo review for this repository.",
+      "Use start_review or read demo2codex://start-review. If unavailable, stop. Do not audit, build, run, or edit the repository.",
       "Show my current demo-review status.",
       "Finish the review and turn only the discussed changes into concise Chinese TODOs."
     ]

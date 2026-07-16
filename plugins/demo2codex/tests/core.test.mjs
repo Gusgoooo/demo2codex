@@ -247,6 +247,40 @@ test("session returns raw evidence and saves model-generated results", async (t)
   );
 });
 
+test("concurrent finish callers wait for persisted evidence", async (t) => {
+  const repoPath = await makeDemoRepository();
+  t.after(() => rm(repoPath, { recursive: true, force: true }));
+  const snapshot = await captureRepositorySnapshot(repoPath);
+  const store = new SessionStore({
+    registryPath: path.join(repoPath, ".demo2codex-test-registry.json"),
+  });
+  const session = await store.start({
+    repoPath,
+    title: "并发结束测试",
+    language: "zh-CN",
+    repository: snapshot.repository,
+    serverUrl: "http://127.0.0.1:47831",
+  });
+  await store.addEvent(session.id, {
+    type: "transcript",
+    text: "只调整当前页面的主按钮。",
+    final: true,
+  });
+
+  const finishPromise = store.finish(session.id);
+  const requestedFinishPromise = store.requestFinish(session.id);
+  const [finished, requestedFinish] = await Promise.all([
+    finishPromise,
+    requestedFinishPromise,
+  ]);
+
+  assert.equal(finished.evidence_files.evidence, requestedFinish.evidence_files.evidence);
+  assert.equal(
+    JSON.parse(await readFile(requestedFinish.evidence_files.evidence, "utf8")).session_id,
+    session.id,
+  );
+});
+
 test("session registry restores an active review after a server restart", async (t) => {
   const repoPath = await makeDemoRepository();
   t.after(() => rm(repoPath, { recursive: true, force: true }));
