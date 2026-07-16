@@ -18,11 +18,19 @@ export class SessionStore {
   constructor(options = {}) {
     this.sessions = new Map();
     this.activeSessionId = null;
-    this.registryPath = path.resolve(
+    const configuredRegistryPath =
       options.registryPath ||
-      process.env.MEETING2PROMPT_REGISTRY ||
-      path.join(os.homedir(), ".meeting2prompt", "registry.json"),
+      process.env.DEMO2CODEX_REGISTRY ||
+      process.env.MEETING2PROMPT_REGISTRY;
+    this.registryPath = path.resolve(
+      configuredRegistryPath ||
+      path.join(os.homedir(), ".demo2codex", "registry.json"),
     );
+    this.legacyRegistryPath = options.legacyRegistryPath
+      ? path.resolve(options.legacyRegistryPath)
+      : configuredRegistryPath
+        ? null
+        : path.join(os.homedir(), ".meeting2prompt", "registry.json");
     this.initialization = null;
     this.initialized = false;
   }
@@ -30,13 +38,15 @@ export class SessionStore {
   async initialize() {
     if (this.initialization) return this.initialization;
     this.initialization = (async () => {
-      let registry = null;
-      try {
-        registry = JSON.parse(await readFile(this.registryPath, "utf8"));
-      } catch {
-        registry = null;
-      }
-      for (const entry of Object.values(registry?.sessions || {})) {
+      const [registry, legacyRegistry] = await Promise.all([
+        readRegistry(this.registryPath),
+        this.legacyRegistryPath ? readRegistry(this.legacyRegistryPath) : null,
+      ]);
+      const registeredSessions = {
+        ...(legacyRegistry?.sessions || {}),
+        ...(registry?.sessions || {}),
+      };
+      for (const entry of Object.values(registeredSessions)) {
         if (!entry?.session_file) continue;
         try {
           const session = JSON.parse(await readFile(entry.session_file, "utf8"));
@@ -61,11 +71,36 @@ export class SessionStore {
   async start({ repoPath, title, language, demoUrl, repository, serverUrl }) {
     await this.initialize();
     const active = this.getActive();
-    if (active) throw new Error(`Review ${active.id} is already recording. Finish it before starting another.`);
+    const normalizedRepoPath = path.resolve(repoPath);
+    if (active && path.resolve(active.repo_path) === normalizedRepoPath) {
+      const now = isoTimestamp();
+      if (title?.trim()) active.title = title.trim();
+      if (language) active.language = language;
+      if (demoUrl !== undefined) active.demo_url = demoUrl || null;
+      if (repository) active.repository = repository;
+      active.server_url = serverUrl;
+      active.updated_at = now;
+      active.resumed_at = now;
+      await this.persist(active);
+      return { ...jsonClone(active), resumed: true };
+    }
+    if (active && canDiscardEmptySession(active)) {
+      const now = isoTimestamp();
+      active.status = "abandoned";
+      active.recording_state = "stopped";
+      active.ended_at = now;
+      active.updated_at = now;
+      this.activeSessionId = null;
+      await this.persist(active);
+    } else if (active) {
+      throw new Error(
+        `Review ${active.id} is already recording for ${active.repo_path}. Finish it before starting a review for ${normalizedRepoPath}.`,
+      );
+    }
 
     const id = makeId("review", randomBytes(4));
     const token = randomBytes(32).toString("base64url");
-    const directory = path.join(repoPath, ".meeting2prompt", "reviews", id);
+    const directory = path.join(normalizedRepoPath, ".demo2codex", "reviews", id);
     const now = isoTimestamp();
     const session = {
       schema_version: 2,
@@ -77,8 +112,8 @@ export class SessionStore {
       finish_requested_at: null,
       title: title?.trim() || `Demo review ${now.slice(0, 10)}`,
       language: language || "zh-CN",
-      repo_path: repoPath,
-      repository: repository || { name: path.basename(repoPath), git: null },
+      repo_path: normalizedRepoPath,
+      repository: repository || { name: path.basename(normalizedRepoPath), git: null },
       demo_url: demoUrl || null,
       server_url: serverUrl,
       directory,
@@ -368,13 +403,13 @@ export class SessionStore {
     return outputPath;
   }
 
-  async saveArtifacts(id, { meetingSummary, tasks }) {
+  async saveArtifacts(id, { reviewSummary, tasks }) {
     const session = this.get(id);
     if (session.status !== "finished") {
       throw new Error(`Review ${session.id} must finish before model-generated results can be saved.`);
     }
-    if (typeof meetingSummary !== "string" || !meetingSummary.trim()) {
-      throw new Error("meeting_summary must be a non-empty string.");
+    if (typeof reviewSummary !== "string" || !reviewSummary.trim()) {
+      throw new Error("review_summary must be a non-empty string.");
     }
     if (!Array.isArray(tasks)) throw new Error("tasks must be an array.");
 
@@ -382,13 +417,13 @@ export class SessionStore {
     const artifactDirectory = path.join(session.directory, "artifacts");
     await ensureDirectory(artifactDirectory);
     const files = {
-      meeting_summary: path.join(artifactDirectory, "meeting-summary.md"),
+      review_summary: path.join(artifactDirectory, "review-summary.md"),
       transcript: path.join(artifactDirectory, "transcript.md"),
       tasks: path.join(artifactDirectory, "tasks.json"),
       evidence: path.join(artifactDirectory, "evidence.json"),
     };
     await Promise.all([
-      atomicWriteFile(files.meeting_summary, meetingSummary, { encoding: "utf8" }),
+      atomicWriteFile(files.review_summary, reviewSummary, { encoding: "utf8" }),
       atomicWriteFile(files.transcript, result.transcript_markdown, { encoding: "utf8" }),
       atomicWriteFile(files.tasks, `${JSON.stringify(tasks, null, 2)}\n`, { encoding: "utf8" }),
       atomicWriteFile(files.evidence, `${JSON.stringify(result, null, 2)}\n`, { encoding: "utf8" }),
@@ -397,7 +432,7 @@ export class SessionStore {
     session.updated_at = isoTimestamp();
     await this.persist(session);
     await atomicWriteFile(
-      path.join(session.repo_path, ".meeting2prompt", "latest.json"),
+      path.join(session.repo_path, ".demo2codex", "latest.json"),
       `${JSON.stringify({ session_id: session.id, artifacts: files, updated_at: session.updated_at }, null, 2)}\n`,
       { encoding: "utf8" },
     );
@@ -428,6 +463,23 @@ export class SessionStore {
     }
     registry.updated_at = isoTimestamp();
     await atomicWriteFile(this.registryPath, `${JSON.stringify(registry, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  }
+}
+
+function canDiscardEmptySession(session) {
+  return (
+    session.recording_state === "idle" &&
+    session.event_count === 0 &&
+    session.audio_chunks === 0 &&
+    session.audio_bytes === 0
+  );
+}
+
+async function readRegistry(registryPath) {
+  try {
+    return JSON.parse(await readFile(registryPath, "utf8"));
+  } catch {
+    return null;
   }
 }
 

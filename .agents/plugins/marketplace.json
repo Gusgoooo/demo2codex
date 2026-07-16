@@ -1,14 +1,14 @@
 {
-  "name": "meeting2prompt",
+  "name": "demo2codex",
   "interface": {
-    "displayName": "Meeting2Prompt"
+    "displayName": "Demo2Codex"
   },
   "plugins": [
     {
-      "name": "meeting2prompt",
+      "name": "demo2codex",
       "source": {
         "source": "local",
-        "path": "./plugins/meeting2prompt"
+        "path": "./plugins/demo2codex"
       },
       "policy": {
         "installation": "AVAILABLE",

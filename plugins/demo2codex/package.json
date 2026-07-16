@@ -1,6 +1,6 @@
 {
-  "name": "meeting2prompt",
-  "version": "0.2.0",
+  "name": "demo2codex",
+  "version": "0.3.0",
   "private": true,
   "description": "Local-first Codex plugin that captures demo-review evidence for the user's active model.",
   "type": "module",

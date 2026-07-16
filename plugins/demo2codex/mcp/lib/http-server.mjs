@@ -9,7 +9,7 @@ const MODULE_DIRECTORY = path.dirname(fileURLToPath(import.meta.url));
 const WEB_DIRECTORY = path.resolve(MODULE_DIRECTORY, "../../web");
 const BODY_LIMIT = 25 * 1024 * 1024;
 
-export class MeetingHttpServer {
+export class DemoReviewHttpServer {
   constructor({ store, host = "127.0.0.1", port = 47831 }) {
     this.store = store;
     this.host = host;
@@ -55,7 +55,7 @@ export class MeetingHttpServer {
       if (origin && !this.originAllowed(origin)) return sendJson(response, 403, { error: "Origin is not allowed" });
       applyCors(response, origin);
       if (request.method === "OPTIONS") {
-        response.writeHead(204, { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Meeting2Prompt-Token", "Access-Control-Max-Age": "600" });
+        response.writeHead(204, { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Demo2Codex-Token, X-Meeting2Prompt-Token", "Access-Control-Max-Age": "600" });
         return response.end();
       }
 
@@ -64,7 +64,7 @@ export class MeetingHttpServer {
       }
       if (request.method === "GET" && url.pathname === "/launch-recorder") {
         const session = this.store.getActive();
-        if (!session) return sendJson(response, 404, { error: "No active meeting session" });
+        if (!session) return sendJson(response, 404, { error: "No active review session" });
         if (!this.store.verifyBridgeKey(session, url.searchParams.get("bridge"))) {
           return sendJson(response, 401, { error: "Invalid bridge key" });
         }
@@ -105,12 +105,12 @@ export class MeetingHttpServer {
       const bridgeAuthorized = this.store.verifyBridgeKey(session, url.searchParams.get("bridge"));
 
       if (request.method === "GET" && !match[2]) {
-        if (!tokenAuthorized) return sendJson(response, 401, { error: "Invalid meeting token" });
+        if (!tokenAuthorized) return sendJson(response, 401, { error: "Invalid review token" });
         return sendJson(response, 200, { session: this.store.publicSession(session) });
       }
       if (request.method === "POST" && match[2] === "events") {
         if (!tokenAuthorized && !bridgeAuthorized) {
-          return sendJson(response, 401, { error: "Invalid meeting or bridge credential" });
+          return sendJson(response, 401, { error: "Invalid review or bridge credential" });
         }
         const input = JSON.parse((await readBody(request, 2 * 1024 * 1024)).toString("utf8") || "{}");
         const payload = input.payload && typeof input.payload === "object" ? input.payload : {};
@@ -130,7 +130,7 @@ export class MeetingHttpServer {
         return sendJson(response, 202, { accepted: true, event });
       }
       if (request.method === "POST" && match[2] === "audio") {
-        if (!tokenAuthorized) return sendJson(response, 401, { error: "Invalid meeting token" });
+        if (!tokenAuthorized) return sendJson(response, 401, { error: "Invalid review token" });
         const sequence = Number.parseInt(url.searchParams.get("seq") || "", 10);
         const bytes = await readBody(request, BODY_LIMIT);
         const result = await this.store.saveAudio(session.id, bytes, {
@@ -141,14 +141,14 @@ export class MeetingHttpServer {
         return sendJson(response, 202, { accepted: true, audio: result });
       }
       if (request.method === "POST" && match[2] === "finish") {
-        if (!tokenAuthorized) return sendJson(response, 401, { error: "Invalid meeting token" });
+        if (!tokenAuthorized) return sendJson(response, 401, { error: "Invalid review token" });
         await consumeOptionalBody(request);
         const result = await this.store.finish(session.id, { requireFinalAudio: true });
         return sendJson(response, 200, result);
       }
       return sendJson(response, 405, { error: "Method not allowed" });
     } catch (error) {
-      const status = /too large/i.test(error.message) ? 413 : /Unknown meeting|No active/.test(error.message) ? 404 : 400;
+      const status = /too large/i.test(error.message) ? 413 : /Unknown review|No active/.test(error.message) ? 404 : 400;
       sendJson(response, status, { error: error.message });
     }
   }
@@ -182,7 +182,7 @@ export class MeetingHttpServer {
     } catch (error) {
       if (pathname === "/embed.js") {
         response.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" });
-        return response.end("console.warn('[Meeting2Prompt] embed.js is not available yet');\n");
+        return response.end("console.warn('[Demo2Codex] embed.js is not available yet');\n");
       }
       sendJson(response, 404, { error: "Static asset not found" });
     }
@@ -197,7 +197,12 @@ function applyCors(response, origin) {
 
 function getToken(request, url) {
   const authorization = request.headers.authorization || "";
-  return url.searchParams.get("token") || request.headers["x-meeting2prompt-token"] || (authorization.startsWith("Bearer ") ? authorization.slice(7) : "");
+  return (
+    url.searchParams.get("token") ||
+    request.headers["x-demo2codex-token"] ||
+    request.headers["x-meeting2prompt-token"] ||
+    (authorization.startsWith("Bearer ") ? authorization.slice(7) : "")
+  );
 }
 
 function normalizeWebEvent(type, payload) {

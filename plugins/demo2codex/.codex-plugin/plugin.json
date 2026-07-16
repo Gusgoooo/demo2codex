@@ -1,31 +1,31 @@
 {
-  "name": "meeting2prompt",
-  "version": "0.2.0+codex.20260716065828",
+  "name": "demo2codex",
+  "version": "0.3.0+codex.20260716160403",
   "description": "Capture local demo-review evidence so the user's active Codex model can produce focused code-change tasks.",
   "author": {
     "name": "Gusgoooo",
     "url": "https://github.com/Gusgoooo"
   },
-  "homepage": "https://github.com/Gusgoooo/meeting2prompt",
-  "repository": "https://github.com/Gusgoooo/meeting2prompt",
+  "homepage": "https://github.com/Gusgoooo/demo2codex",
+  "repository": "https://github.com/Gusgoooo/demo2codex",
   "keywords": [
-    "meeting",
+    "demo",
     "demo-review",
     "codex",
     "product-feedback",
     "local-first"
   ],
   "interface": {
-    "displayName": "Meeting2Prompt",
+    "displayName": "Demo2Codex",
     "shortDescription": "Turn demo feedback into focused Codex tasks.",
-    "longDescription": "Record a local demo review, capture transcript and page-focus evidence, and hand the raw evidence to the user's active Codex model with narrow scope constraints. Meeting2Prompt does not call a model API or generate requirements on its own.",
+    "longDescription": "Record a local demo review, capture transcript and page-focus evidence, and hand the raw evidence to the user's active Codex model with narrow scope constraints. Demo2Codex does not call a model API or generate requirements on its own.",
     "developerName": "Gusgoooo",
     "category": "Productivity",
     "capabilities": [
       "Interactive",
       "Write"
     ],
-    "websiteURL": "https://github.com/Gusgoooo/meeting2prompt",
+    "websiteURL": "https://github.com/Gusgoooo/demo2codex",
     "defaultPrompt": [
       "Start a demo review for this repository.",
       "Show my current demo-review status.",

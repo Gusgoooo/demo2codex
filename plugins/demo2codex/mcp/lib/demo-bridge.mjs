@@ -3,8 +3,10 @@ import path from "node:path";
 
 import { atomicWriteFile, pathExists, safeRelative } from "./utils.mjs";
 
-const START_MARKER = "<!-- meeting2prompt:bridge:start -->";
-const END_MARKER = "<!-- meeting2prompt:bridge:end -->";
+const START_MARKER = "<!-- demo2codex:bridge:start -->";
+const END_MARKER = "<!-- demo2codex:bridge:end -->";
+const LEGACY_START_MARKER = "<!-- meeting2prompt:bridge:start -->";
+const LEGACY_END_MARKER = "<!-- meeting2prompt:bridge:end -->";
 
 function javascriptString(value) {
   return JSON.stringify(String(value))
@@ -31,16 +33,16 @@ export async function installDemoBridge({ repoPath, serverUrl, indexFile }) {
     ? normalizedServerUrl
     : `${normalizedServerUrl}/embed.js`;
   const snippet = `${START_MARKER}
-<script type="module" data-meeting2prompt-bridge>
-  const meeting2promptLocalHosts = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
-  if (meeting2promptLocalHosts.has(window.location.hostname) || window.location.hostname.endsWith(".localhost")) {
+<script type="module" data-demo2codex-bridge>
+  const demo2codexLocalHosts = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
+  if (demo2codexLocalHosts.has(window.location.hostname) || window.location.hostname.endsWith(".localhost")) {
     import(${javascriptString(scriptUrl)}).catch(() => {});
   }
 </script>
 ${END_MARKER}`;
 
   if (!targetPath) {
-    const snippetPath = path.join(canonicalRepoPath, ".meeting2prompt", "bridge-snippet.html");
+    const snippetPath = path.join(canonicalRepoPath, ".demo2codex", "bridge-snippet.html");
     await atomicWriteFile(snippetPath, `${snippet}\n`, { encoding: "utf8" });
     return {
       installed: false,
@@ -53,11 +55,14 @@ ${END_MARKER}`;
 
   const original = await readFile(targetPath, "utf8");
   const markerPattern = new RegExp(`${START_MARKER}[\\s\\S]*?${END_MARKER}`, "g");
+  const legacyMarkerPattern = new RegExp(`${LEGACY_START_MARKER}[\\s\\S]*?${LEGACY_END_MARKER}`, "g");
   let next;
   let alreadyInstalled = false;
   if (markerPattern.test(original)) {
     next = original.replace(markerPattern, snippet);
     alreadyInstalled = next === original;
+  } else if (legacyMarkerPattern.test(original)) {
+    next = original.replace(legacyMarkerPattern, snippet);
   } else if (/<\/body\s*>/i.test(original)) {
     next = original.replace(/<\/body\s*>/i, `  ${snippet}\n</body>`);
   } else {

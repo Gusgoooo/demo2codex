@@ -2,12 +2,12 @@ const embedUrl = new URL(import.meta.url);
 const serverOrigin = embedUrl.origin;
 const bridgeKey = embedUrl.searchParams.get("bridge") || "";
 
-if (!window.__meeting2promptEmbed) {
-  window.__meeting2promptEmbed = true;
-  initialiseMeeting2PromptEmbed();
+if (!window.__demo2codexEmbed) {
+  window.__demo2codexEmbed = true;
+  initialiseDemo2CodexEmbed();
 }
 
-function initialiseMeeting2PromptEmbed() {
+function initialiseDemo2CodexEmbed() {
   const state = {
     session: null,
     picking: false,
@@ -19,8 +19,8 @@ function initialiseMeeting2PromptEmbed() {
   };
 
   const host = document.createElement("div");
-  host.id = "meeting2prompt-root";
-  host.setAttribute("data-meeting2prompt-ui", "true");
+  host.id = "demo2codex-root";
+  host.setAttribute("data-demo2codex-ui", "true");
   host.style.cssText =
     "all:initial;position:fixed;inset:0;z-index:2147483647;pointer-events:none;contain:layout style;";
   const shadow = host.attachShadow({ mode: "open" });
@@ -90,20 +90,20 @@ function initialiseMeeting2PromptEmbed() {
 
   const toolbar = document.createElement("aside");
   toolbar.className = "m2p-toolbar";
-  toolbar.setAttribute("aria-label", "Meeting2Prompt 会议工具");
+  toolbar.setAttribute("aria-label", "Demo2Codex 评审工具");
   toolbar.innerHTML = `
-    <button class="m2p-mini-button" type="button" aria-label="展开 Meeting2Prompt" hidden>M2P</button>
+    <button class="m2p-mini-button" type="button" aria-label="展开 Demo2Codex" hidden>D2C</button>
     <div class="m2p-brand">
-      <span class="m2p-logo" aria-hidden="true">M2P</span>
+      <span class="m2p-logo" aria-hidden="true">D2C</span>
       <span class="m2p-copy">
-        <span class="m2p-title">Meeting2Prompt</span>
+        <span class="m2p-title">Demo2Codex</span>
         <span class="m2p-status">正在连接本地会话</span>
       </span>
     </div>
     <span class="m2p-divider" aria-hidden="true"></span>
     <button class="m2p-button m2p-button-primary" data-action="recorder" type="button">● 打开录音台</button>
     <button class="m2p-button" data-action="pick" type="button">⌖ 选择页面区域</button>
-    <button class="m2p-button m2p-icon-button" data-action="minimize" type="button" aria-label="收起 Meeting2Prompt">—</button>
+    <button class="m2p-button m2p-icon-button" data-action="minimize" type="button" aria-label="收起 Demo2Codex">—</button>
   `;
 
   const hoverHighlight = createHighlight("hover");
@@ -191,8 +191,8 @@ function initialiseMeeting2PromptEmbed() {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return true;
     } catch (error) {
-      console.warn(`[Meeting2Prompt] Could not send ${type}`, error);
-      showToast("本地服务暂时不可用；请保持会议工具运行。 ");
+      console.warn(`[Demo2Codex] Could not send ${type}`, error);
+      showToast("本地服务暂时不可用；请保持评审工具运行。 ");
       return false;
     }
   }
@@ -222,15 +222,15 @@ function initialiseMeeting2PromptEmbed() {
     }
     state.session = nextSession;
     if (!nextSession) {
-      titleElement.textContent = "Meeting2Prompt";
-      statusElement.textContent = "暂无活动会议";
+      titleElement.textContent = "Demo2Codex";
+      statusElement.textContent = "暂无活动评审";
       statusElement.dataset.offline = "true";
       recorderButton.disabled = true;
       pickButton.disabled = true;
       return;
     }
     titleElement.textContent = nextSession.title;
-    statusElement.textContent = "会议上下文已连接";
+    statusElement.textContent = "评审上下文已连接";
     delete statusElement.dataset.offline;
     recorderButton.disabled = false;
     pickButton.disabled = false;
@@ -241,18 +241,23 @@ function initialiseMeeting2PromptEmbed() {
     const url = state.session.recorderLaunchUrl
       ? new URL(state.session.recorderLaunchUrl, serverOrigin)
       : new URL(`/launch-recorder?bridge=${encodeURIComponent(bridgeKey)}`, serverOrigin);
-    state.recorderWindow = window.open(url, "meeting2prompt-recorder");
-    if (!state.recorderWindow) showToast("请允许此页面打开 Meeting2Prompt 录音台。 ");
+    state.recorderWindow = window.open(url, "demo2codex-recorder");
+    if (!state.recorderWindow) showToast("请允许此页面打开 Demo2Codex 录音台。 ");
     else state.recorderWindow.focus();
   }
 
-  function isMeeting2PromptElement(element) {
-    return !element || element === host || host.contains(element) || element.closest?.("#meeting2prompt-root");
+  function isDemo2CodexElement(element) {
+    return (
+      !element ||
+      element === host ||
+      host.contains(element) ||
+      element.closest?.("#demo2codex-root, #meeting2prompt-root")
+    );
   }
 
   function elementAtPoint(x, y) {
     const element = document.elementFromPoint(x, y);
-    return isMeeting2PromptElement(element) ? null : element;
+    return isDemo2CodexElement(element) ? null : element;
   }
 
   function describeElement(element) {
@@ -260,6 +265,7 @@ function initialiseMeeting2PromptEmbed() {
     const text = (element.innerText || element.textContent || "").replace(/\s+/g, " ").trim().slice(0, 180);
     const framework = frameworkEvidence(element);
     const stableId =
+      element.getAttribute("data-d2c-id") ||
       element.getAttribute("data-m2p-id") ||
       element.getAttribute("data-testid") ||
       element.getAttribute("data-test-id") ||
@@ -289,10 +295,14 @@ function initialiseMeeting2PromptEmbed() {
 
   function frameworkEvidence(element) {
     const explicitComponent =
+      element.getAttribute("data-d2c-component") ||
       element.getAttribute("data-m2p-component") ||
       element.getAttribute("data-component") ||
       "";
-    const explicitSource = element.getAttribute("data-m2p-source") || "";
+    const explicitSource =
+      element.getAttribute("data-d2c-source") ||
+      element.getAttribute("data-m2p-source") ||
+      "";
     const componentStack = [];
     let source = explicitSource;
     if (explicitComponent) componentStack.push(explicitComponent);
@@ -345,7 +355,7 @@ function initialiseMeeting2PromptEmbed() {
 
   function selectorFor(element) {
     if (element.id) return `#${cssEscape(element.id)}`;
-    for (const attribute of ["data-m2p-id", "data-testid", "data-test-id"]) {
+    for (const attribute of ["data-d2c-id", "data-m2p-id", "data-testid", "data-test-id"]) {
       const value = element.getAttribute(attribute);
       if (value) return attributeSelector(attribute, value);
     }
@@ -449,7 +459,7 @@ function initialiseMeeting2PromptEmbed() {
     showToast(
       delivered
         ? `已对焦“${descriptor.label}”，接下来的讨论会归到这个页面区域。`
-        : "已在页面标记区域，但暂时无法同步到本地会议。",
+        : "已在页面标记区域，但暂时无法同步到本地评审。",
     );
   }
 
@@ -468,7 +478,7 @@ function initialiseMeeting2PromptEmbed() {
       startedAt: previous.startedAt,
       reason,
     });
-    if (reason === "user.ended") showToast("已结束页面对焦，后续讨论回到整个会议。 ");
+    if (reason === "user.ended") showToast("已结束页面对焦，后续讨论回到整个评审。 ");
   }
 
   function renderFocusButton() {

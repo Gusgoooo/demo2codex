@@ -5,7 +5,7 @@ const language = params.get("lang") || "zh-CN";
 const serverOrigin = window.location.origin;
 
 const AUDIO_SLICE_MS = 5_000;
-const DB_NAME = "meeting2prompt-recorder";
+const DB_NAME = "demo2codex-recorder";
 const DB_VERSION = 1;
 const CHUNK_STORE = "audioChunks";
 
@@ -82,7 +82,7 @@ function authHeaders(extra = {}) {
   const headers = { ...extra };
   if (token) {
     headers.Authorization = `Bearer ${token}`;
-    headers["X-Meeting2Prompt-Token"] = token;
+    headers["X-Demo2Codex-Token"] = token;
   }
   return headers;
 }
@@ -114,7 +114,7 @@ function setFocusSummary(focus) {
     elements.focusSummary.querySelector("span:last-child").textContent = `正在对焦：${label}`;
   } else {
     delete elements.focusSummary.dataset.active;
-    elements.focusSummary.querySelector("span:last-child").textContent = "当前为全局会议记录";
+    elements.focusSummary.querySelector("span:last-child").textContent = "当前为全局评审记录";
   }
 }
 
@@ -234,7 +234,7 @@ async function allPendingChunks() {
       const stored = await getStoredChunks();
       for (const record of stored) byId.set(record.id, record);
     } catch (error) {
-      console.warn("[Meeting2Prompt] Failed to read audio backup", error);
+      console.warn("[Demo2Codex] Failed to read audio backup", error);
     }
   }
   return [...byId.values()].sort((a, b) => a.sequence - b.sequence);
@@ -257,7 +257,7 @@ function nextSequence() {
   const sequence = state.nextSequence;
   state.nextSequence += 1;
   try {
-    window.localStorage.setItem(`m2p.audio-sequence.${sessionId}`, String(state.nextSequence));
+    window.localStorage.setItem(`d2c.audio-sequence.${sessionId}`, String(state.nextSequence));
   } catch {
     // A blocked localStorage does not prevent recording because IndexedDB remains primary.
   }
@@ -296,7 +296,7 @@ function enqueueAudioChunk(blob, final = false) {
       try {
         await putChunk(record);
       } catch (error) {
-        console.warn("[Meeting2Prompt] Failed to back up chunk", error);
+        console.warn("[Demo2Codex] Failed to back up chunk", error);
         toast("这个录音片段未能写入浏览器备份，将保留在当前页面并继续上传。", "error");
       }
     }
@@ -341,12 +341,12 @@ async function flushPendingUploads() {
           try {
             await deleteChunk(record.id);
           } catch (error) {
-            console.warn("[Meeting2Prompt] Uploaded chunk could not be removed", error);
+            console.warn("[Demo2Codex] Uploaded chunk could not be removed", error);
           }
         }
         setConnectionStatus("online", "本地服务已连接");
       } catch (error) {
-        console.warn("[Meeting2Prompt] Audio remains queued", error);
+        console.warn("[Demo2Codex] Audio remains queued", error);
         setConnectionStatus("offline", "等待本地服务");
         break;
       }
@@ -386,7 +386,7 @@ function sendEvent(type, payload = {}) {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return true;
     } catch (error) {
-      console.warn(`[Meeting2Prompt] Event ${type} was not delivered`, error);
+      console.warn(`[Demo2Codex] Event ${type} was not delivered`, error);
       return false;
     }
   })();
@@ -482,7 +482,7 @@ function configureSpeechRecognition() {
 
   recognition.onerror = (event) => {
     if (["aborted", "no-speech"].includes(event.error)) return;
-    console.warn("[Meeting2Prompt] Speech recognition error", event.error);
+    console.warn("[Demo2Codex] Speech recognition error", event.error);
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
       state.speechEnabled = false;
       elements.speechToggle.checked = false;
@@ -518,7 +518,7 @@ function startSpeechRecognition() {
     state.recognition.start();
   } catch (error) {
     if (error?.name !== "InvalidStateError") {
-      console.warn("[Meeting2Prompt] Speech recognition could not start", error);
+      console.warn("[Demo2Codex] Speech recognition could not start", error);
     }
   }
 }
@@ -539,7 +539,7 @@ function stopSpeechRecognition() {
     try {
       state.recognition.stop();
     } catch (error) {
-      console.warn("[Meeting2Prompt] Speech recognition could not stop", error);
+      console.warn("[Demo2Codex] Speech recognition could not stop", error);
       finish();
     }
   });
@@ -611,7 +611,7 @@ function mediaRecorderStopped() {
 
 async function startRecording() {
   if (!sessionId || !token) {
-    toast("缺少 session 或 token，请从 Codex 重新打开这场会议。", "error");
+    toast("缺少 session 或 token，请从 Codex 重新打开这场评审。", "error");
     return;
   }
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
@@ -705,11 +705,11 @@ async function togglePause() {
 }
 
 function renderFinishedMessage() {
-  setRecordingStatus("finished", "会议已结束");
+  setRecordingStatus("finished", "评审已结束");
   elements.finishSpinner.classList.add("is-done");
-  elements.finishDialogTitle.textContent = "会议已提交整理";
+  elements.finishDialogTitle.textContent = "评审已提交整理";
   elements.finishDialogText.textContent =
-    "录音和逐字稿已保存。你可以回到 Codex 查看会议纪要与修改指令。";
+    "录音和逐字稿已保存。你可以回到 Codex 查看评审总结与修改指令。";
   elements.closeDialogButton.hidden = false;
 }
 
@@ -751,7 +751,7 @@ async function retryDeferredFinish() {
     await submitFinishWhenAudioIsReady();
   } catch (error) {
     if (error?.code !== "AUDIO_PENDING") {
-      console.warn("[Meeting2Prompt] Deferred finish is still waiting", error);
+      console.warn("[Demo2Codex] Deferred finish is still waiting", error);
     }
   }
 }
@@ -793,12 +793,12 @@ async function finishRecording() {
     };
     await submitFinishWhenAudioIsReady();
   } catch (error) {
-    console.error("[Meeting2Prompt] Failed to finish meeting", error);
+    console.error("[Demo2Codex] Failed to finish review", error);
     setRecordingStatus("finished", "本机已保存");
     elements.finishSpinner.classList.add("is-done");
     elements.finishDialogTitle.textContent = "录音已保存在本机";
     elements.finishDialogText.textContent =
-      "暂时无法通知本地 Meeting2Prompt 服务。请保持此页面打开；连接恢复后会继续上传录音。";
+      "暂时无法通知本地 Demo2Codex 服务。请保持此页面打开；连接恢复后会继续上传录音。";
     elements.closeDialogButton.hidden = false;
     toast("未能提交整理，但本地录音备份仍然保留。", "error");
   }
@@ -854,7 +854,7 @@ async function initialiseLocalBackup() {
     let persistedSequence = 0;
     try {
       persistedSequence = Number(
-        window.localStorage.getItem(`m2p.audio-sequence.${sessionId}`) || 0,
+        window.localStorage.getItem(`d2c.audio-sequence.${sessionId}`) || 0,
       );
     } catch {
       // Private browsing may block localStorage while IndexedDB remains available.
@@ -866,7 +866,7 @@ async function initialiseLocalBackup() {
       void flushPendingUploads();
     }
   } catch (error) {
-    console.warn("[Meeting2Prompt] IndexedDB is unavailable", error);
+    console.warn("[Demo2Codex] IndexedDB is unavailable", error);
     state.db = null;
     elements.backupStatus.textContent = "浏览器本地备份不可用";
     toast("无法使用浏览器本地备份；录音仍可上传，但请不要刷新此页面。", "error");

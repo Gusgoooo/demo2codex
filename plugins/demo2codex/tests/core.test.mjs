@@ -9,7 +9,7 @@ import { SessionStore } from "../mcp/lib/session-store.mjs";
 import { TRANSLATION_CONSTRAINTS } from "../mcp/lib/translation-constraints.mjs";
 
 async function makeDemoRepository() {
-  const repoPath = await mkdtemp(path.join(os.tmpdir(), "meeting2prompt-demo-"));
+  const repoPath = await mkdtemp(path.join(os.tmpdir(), "demo2codex-demo-"));
   await mkdir(path.join(repoPath, "src", "components"), { recursive: true });
   await writeFile(
     path.join(repoPath, "package.json"),
@@ -40,7 +40,7 @@ test("session returns raw evidence and saves model-generated results", async (t)
   const repoPath = await makeDemoRepository();
   t.after(() => rm(repoPath, { recursive: true, force: true }));
   const snapshot = await captureRepositorySnapshot(repoPath);
-  const registryPath = path.join(repoPath, ".meeting2prompt-test-registry.json");
+  const registryPath = path.join(repoPath, ".demo2codex-test-registry.json");
   const store = new SessionStore({ registryPath });
   const session = await store.start({
     repoPath,
@@ -49,6 +49,7 @@ test("session returns raw evidence and saves model-generated results", async (t)
     repository: snapshot.repository,
     serverUrl: "http://127.0.0.1:47831",
   });
+  assert.match(session.directory, /[\\/]\.demo2codex[\\/]reviews[\\/]/);
 
   await store.addEvent(session.id, {
     type: "focus.start",
@@ -85,20 +86,24 @@ test("session returns raw evidence and saves model-generated results", async (t)
   assert.equal(JSON.parse(await readFile(finished.evidence_files.evidence, "utf8")).repo_path, repoPath);
 
   const artifacts = await store.saveArtifacts(session.id, {
-    meetingSummary: "# 会议总结\n\n只调整套餐页主按钮层级。\n",
+    reviewSummary: "# 评审总结\n\n只调整套餐页主按钮层级。\n",
     tasks: [{ title: "强化升级按钮", open_questions: [] }],
   });
   assert.deepEqual(JSON.parse(await readFile(artifacts.files.tasks, "utf8")), [
     { title: "强化升级按钮", open_questions: [] },
   ]);
-  assert.match(await readFile(artifacts.files.meeting_summary, "utf8"), /只调整套餐页/);
+  assert.match(await readFile(artifacts.files.review_summary, "utf8"), /只调整套餐页/);
+  assert.equal(
+    JSON.parse(await readFile(path.join(repoPath, ".demo2codex", "latest.json"), "utf8")).session_id,
+    session.id,
+  );
 });
 
 test("session registry restores an active review after a server restart", async (t) => {
   const repoPath = await makeDemoRepository();
   t.after(() => rm(repoPath, { recursive: true, force: true }));
   const snapshot = await captureRepositorySnapshot(repoPath);
-  const registryPath = path.join(repoPath, ".meeting2prompt-test-registry.json");
+  const registryPath = path.join(repoPath, ".demo2codex-test-registry.json");
   const firstStore = new SessionStore({ registryPath });
   const session = await firstStore.start({
     repoPath,
@@ -107,13 +112,48 @@ test("session registry restores an active review after a server restart", async 
     repository: snapshot.repository,
     serverUrl: "http://127.0.0.1:47831",
   });
-  await firstStore.addEvent(session.id, { type: "transcript", text: "重启前的会议证据。" });
+  await firstStore.addEvent(session.id, { type: "transcript", text: "重启前的评审证据。" });
 
   const restoredStore = new SessionStore({ registryPath });
   await restoredStore.initialize();
   assert.equal(restoredStore.getActive().id, session.id);
+  const resumed = await restoredStore.start({
+    repoPath,
+    title: "恢复测试",
+    language: "zh-CN",
+    repository: snapshot.repository,
+    serverUrl: "http://127.0.0.1:50123",
+  });
+  assert.equal(resumed.id, session.id);
+  assert.equal(resumed.resumed, true);
+  assert.equal(resumed.server_url, "http://127.0.0.1:50123");
   const finished = await restoredStore.finish(session.id);
-  assert.equal(finished.transcript[0].text, "重启前的会议证据。");
+  assert.equal(finished.transcript[0].text, "重启前的评审证据。");
+});
+
+test("new registry imports active sessions from the legacy Meeting2Prompt registry", async (t) => {
+  const repoPath = await makeDemoRepository();
+  t.after(() => rm(repoPath, { recursive: true, force: true }));
+  const snapshot = await captureRepositorySnapshot(repoPath);
+  const legacyRegistryPath = path.join(repoPath, ".meeting2prompt-test-registry.json");
+  const registryPath = path.join(repoPath, ".demo2codex-test-registry.json");
+  const legacyStore = new SessionStore({ registryPath: legacyRegistryPath });
+  const session = await legacyStore.start({
+    repoPath,
+    title: "旧会话迁移",
+    language: "zh-CN",
+    repository: snapshot.repository,
+    serverUrl: "http://127.0.0.1:47831",
+  });
+  await legacyStore.addEvent(session.id, { type: "transcript", text: "保留旧评审证据。" });
+
+  const migratedStore = new SessionStore({ registryPath, legacyRegistryPath });
+  await migratedStore.initialize();
+  assert.equal(migratedStore.getActive().id, session.id);
+  const finished = await migratedStore.finish(session.id);
+  assert.equal(finished.transcript[0].text, "保留旧评审证据。");
+  const migratedRegistry = JSON.parse(await readFile(registryPath, "utf8"));
+  assert.equal(migratedRegistry.sessions[session.id].status, "finished");
 });
 
 test("focus attribution follows event time and does not absorb later transcript", async (t) => {
@@ -121,7 +161,7 @@ test("focus attribution follows event time and does not absorb later transcript"
   t.after(() => rm(repoPath, { recursive: true, force: true }));
   const snapshot = await captureRepositorySnapshot(repoPath);
   const store = new SessionStore({
-    registryPath: path.join(repoPath, ".meeting2prompt-test-registry.json"),
+    registryPath: path.join(repoPath, ".demo2codex-test-registry.json"),
   });
   const session = await store.start({
     repoPath,
