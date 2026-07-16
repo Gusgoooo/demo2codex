@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Meeting2Prompt · 会议录音</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="Meeting2Prompt 首页">
+          <span class="brand-mark" aria-hidden="true">M2P</span>
+          <span>
+            <strong>Meeting2Prompt</strong>
+            <small>把 Demo 讨论变成 Codex 修改指令</small>
+          </span>
+        </a>
+        <span id="connectionBadge" class="badge badge-neutral">
+          <span class="badge-dot" aria-hidden="true"></span>
+          <span>正在连接</span>
+        </span>
+      </header>
+
+      <section class="recorder-card" aria-labelledby="recorderTitle">
+        <div class="recorder-heading">
+          <div>
+            <p class="eyebrow">本地录音台</p>
+            <h1 id="recorderTitle">记录这场 Demo 评审</h1>
+            <p id="sessionLabel" class="session-label">正在读取会议信息…</p>
+          </div>
+          <div id="recordingState" class="recording-state" data-state="idle">
+            <span class="recording-dot" aria-hidden="true"></span>
+            <span id="recordingStateText">准备就绪</span>
+          </div>
+        </div>
+
+        <div class="recording-display">
+          <time id="timer" datetime="PT0S" aria-label="录音时长">00:00:00</time>
+          <div class="level-row">
+            <span>麦克风</span>
+            <div
+              class="level-track"
+              role="meter"
+              aria-label="麦克风音量"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+            >
+              <span id="levelBar" class="level-bar"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="controls" aria-label="录音控制">
+          <button id="startButton" class="button button-primary" type="button">
+            <span class="button-icon" aria-hidden="true">●</span>
+            开始录音
+          </button>
+          <button id="pauseButton" class="button button-secondary" type="button" disabled>
+            <span class="button-icon" aria-hidden="true">Ⅱ</span>
+            <span id="pauseButtonText">暂停</span>
+          </button>
+          <button id="finishButton" class="button button-danger" type="button" disabled>
+            <span class="button-icon" aria-hidden="true">■</span>
+            结束并整理
+          </button>
+        </div>
+
+        <div class="privacy-note">
+          <span class="privacy-icon" aria-hidden="true">⌂</span>
+          <div>
+            <strong>录音先保存在本机</strong>
+            <p>音频按 5 秒分片备份到此浏览器，再发送给当前项目的本地 Meeting2Prompt 服务。断网时会保留并稍后重试。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="transcript-card" aria-labelledby="transcriptTitle">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">实时记录</p>
+            <h2 id="transcriptTitle">逐字稿</h2>
+          </div>
+          <label class="switch-row" for="speechToggle">
+            <span>
+              <strong>浏览器实时转写</strong>
+              <small id="speechSupportText">正在检测浏览器能力</small>
+            </span>
+            <input id="speechToggle" type="checkbox" role="switch" checked />
+            <span class="switch" aria-hidden="true"></span>
+          </label>
+        </div>
+
+        <div class="service-disclosure">
+          <span aria-hidden="true">i</span>
+          <p>浏览器实时转写可能使用浏览器厂商的在线语音服务。你可以随时关闭，并只用下方输入框手动记录。</p>
+        </div>
+
+        <div id="transcriptList" class="transcript-list" aria-live="polite" aria-label="逐字稿内容">
+          <div id="emptyTranscript" class="empty-state">
+            <span aria-hidden="true">✦</span>
+            <p>开始录音后，识别结果会显示在这里。</p>
+            <small>也可以随时手动补充重点。</small>
+          </div>
+        </div>
+
+        <div id="interimTranscript" class="interim-transcript" hidden>
+          <span class="pulse" aria-hidden="true"></span>
+          <span id="interimText"></span>
+        </div>
+
+        <form id="manualTranscriptForm" class="manual-form">
+          <label for="manualTranscript">手动补充逐字稿</label>
+          <div class="manual-row">
+            <textarea
+              id="manualTranscript"
+              rows="2"
+              placeholder="例如：这个按钮需要移到卡片右下角，并降低视觉层级…"
+            ></textarea>
+            <button class="button button-secondary" type="submit">添加</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="context-card" aria-labelledby="focusTitle">
+        <div>
+          <p class="eyebrow">页面对焦</p>
+          <h2 id="focusTitle">在 Demo 中选择要讨论的模块</h2>
+          <p>回到 Demo，点击 Meeting2Prompt 浮层中的“选择页面区域”。选择后，这段讨论会自动归到对应 DOM 和代码上下文。</p>
+        </div>
+        <div id="focusSummary" class="focus-summary">
+          <span class="focus-indicator" aria-hidden="true"></span>
+          <span>当前为全局会议记录</span>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span id="backupStatus">本地备份准备中…</span>
+        <span>关闭 Demo 不会中断此页面中的录音</span>
+      </footer>
+    </main>
+
+    <div id="toastRegion" class="toast-region" aria-live="assertive" aria-atomic="true"></div>
+
+    <dialog id="finishDialog" class="finish-dialog">
+      <form method="dialog">
+        <div id="finishSpinner" class="finish-spinner" aria-hidden="true"></div>
+        <h2 id="finishDialogTitle">正在整理会议</h2>
+        <p id="finishDialogText">正在保存最后一段录音，并通知 Codex 生成修改指令…</p>
+        <button id="closeDialogButton" class="button button-primary" value="close" hidden>完成</button>
+      </form>
+    </dialog>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

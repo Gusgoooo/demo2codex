@@ -1,0 +1,36 @@
+{
+  "name": "meeting2prompt",
+  "version": "0.2.0+codex.20260716065828",
+  "description": "Capture local demo-review evidence so the user's active Codex model can produce focused code-change tasks.",
+  "author": {
+    "name": "Gusgoooo",
+    "url": "https://github.com/Gusgoooo"
+  },
+  "homepage": "https://github.com/Gusgoooo/meeting2prompt",
+  "repository": "https://github.com/Gusgoooo/meeting2prompt",
+  "keywords": [
+    "meeting",
+    "demo-review",
+    "codex",
+    "product-feedback",
+    "local-first"
+  ],
+  "interface": {
+    "displayName": "Meeting2Prompt",
+    "shortDescription": "Turn demo feedback into focused Codex tasks.",
+    "longDescription": "Record a local demo review, capture transcript and page-focus evidence, and hand the raw evidence to the user's active Codex model with narrow scope constraints. Meeting2Prompt does not call a model API or generate requirements on its own.",
+    "developerName": "Gusgoooo",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/Gusgoooo/meeting2prompt",
+    "defaultPrompt": [
+      "Start a demo review for this repository.",
+      "Show my current demo-review status.",
+      "Finish the review and turn only the discussed changes into tasks."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

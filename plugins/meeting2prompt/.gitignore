@@ -1,0 +1,4 @@
+.DS_Store
+node_modules/
+.meeting2prompt/
+npm-debug.log*

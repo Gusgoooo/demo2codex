@@ -1,0 +1,15 @@
+{
+  "name": "meeting2prompt",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Local-first Codex plugin that captures demo-review evidence for the user's active model.",
+  "type": "module",
+  "scripts": {
+    "start": "node ./mcp/server.mjs",
+    "check": "node --check ./mcp/server.mjs && node --check ./mcp/lib/http-server.mjs && node --check ./mcp/lib/repository-snapshot.mjs && node --check ./mcp/lib/session-store.mjs && node --check ./mcp/lib/translation-constraints.mjs && node --check ./web/app.js && node --check ./web/embed.js",
+    "test": "node --test ./tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "meeting2prompt",
+  "interface": {
+    "displayName": "Meeting2Prompt"
+  },
+  "plugins": [
+    {
+      "name": "meeting2prompt",
+      "source": {
+        "source": "local",
+        "path": "./plugins/meeting2prompt"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
