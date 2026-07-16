@@ -55,7 +55,7 @@ export class DemoReviewHttpServer {
       if (origin && !this.originAllowed(origin)) return sendJson(response, 403, { error: "Origin is not allowed" });
       applyCors(response, origin);
       if (request.method === "OPTIONS") {
-        response.writeHead(204, { "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Demo2Codex-Token, X-Meeting2Prompt-Token", "Access-Control-Max-Age": "600" });
+        response.writeHead(204, { "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS", "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Demo2Codex-Token, X-Meeting2Prompt-Token", "Access-Control-Max-Age": "600" });
         return response.end();
       }
 
@@ -97,7 +97,7 @@ export class DemoReviewHttpServer {
         });
       }
 
-      const match = url.pathname.match(/^\/api\/sessions\/([^/]+)(?:\/(events|audio|finish))?$/);
+      const match = url.pathname.match(/^\/api\/sessions\/([^/]+)(?:\/(events|audio|finish|result))?$/);
       if (!match) return sendJson(response, 404, { error: "Not found" });
       const session = this.store.get(decodeURIComponent(match[1]));
       const token = getToken(request, url);
@@ -145,6 +145,26 @@ export class DemoReviewHttpServer {
         await consumeOptionalBody(request);
         const result = await this.store.finish(session.id, { requireFinalAudio: true });
         return sendJson(response, 200, result);
+      }
+      if (request.method === "GET" && match[2] === "result") {
+        if (!tokenAuthorized) return sendJson(response, 401, { error: "Invalid review token" });
+        return sendJson(response, 200, await this.store.getReviewResult(session.id));
+      }
+      if (request.method === "POST" && match[2] === "result") {
+        if (!tokenAuthorized) return sendJson(response, 401, { error: "Invalid review token" });
+        const input = JSON.parse((await readBody(request, 2 * 1024 * 1024)).toString("utf8") || "{}");
+        return sendJson(response, 200, await this.store.saveArtifacts(session.id, {
+          reviewSummary: input.review_summary,
+          tasks: input.tasks,
+        }));
+      }
+      if (request.method === "PUT" && match[2] === "result") {
+        if (!tokenAuthorized) return sendJson(response, 401, { error: "Invalid review token" });
+        const input = JSON.parse((await readBody(request, 2 * 1024 * 1024)).toString("utf8") || "{}");
+        return sendJson(response, 200, await this.store.updateReviewResult(session.id, {
+          reviewSummary: input.review_summary,
+          tasks: input.tasks,
+        }));
       }
       return sendJson(response, 405, { error: "Method not allowed" });
     } catch (error) {

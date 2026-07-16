@@ -3,6 +3,8 @@ import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
+import { captureRepositoryProfile } from "./code-context.mjs";
+
 const execFileAsync = promisify(execFile);
 
 export async function captureRepositorySnapshot(inputPath) {
@@ -14,11 +16,16 @@ export async function captureRepositorySnapshot(inputPath) {
 
   const repoPath = await realpath(resolvedPath);
   const packageJson = await readPackageJson(repoPath);
+  const [git, context] = await Promise.all([
+    gitSnapshot(repoPath),
+    captureRepositoryProfile(repoPath),
+  ]);
   return {
     repo_path: repoPath,
     repository: {
       name: packageJson?.name || path.basename(repoPath),
-      git: await gitSnapshot(repoPath),
+      git,
+      context,
     },
   };
 }

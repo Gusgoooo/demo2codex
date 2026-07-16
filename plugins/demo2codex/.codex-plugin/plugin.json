@@ -1,7 +1,7 @@
 {
   "name": "demo2codex",
-  "version": "0.3.0+codex.20260716160403",
-  "description": "Capture local demo-review evidence so the user's active Codex model can produce focused code-change tasks.",
+  "version": "0.4.0+codex.20260716083544",
+  "description": "Map demo-review feedback to relevant repository modules so the user's Codex model can produce precise Chinese TODOs.",
   "author": {
     "name": "Gusgoooo",
     "url": "https://github.com/Gusgoooo"
@@ -17,8 +17,8 @@
   ],
   "interface": {
     "displayName": "Demo2Codex",
-    "shortDescription": "Turn demo feedback into focused Codex tasks.",
-    "longDescription": "Record a local demo review, capture transcript and page-focus evidence, and hand the raw evidence to the user's active Codex model with narrow scope constraints. Demo2Codex does not call a model API or generate requirements on its own.",
+    "shortDescription": "Turn demo feedback into focused Chinese TODOs.",
+    "longDescription": "Record a local demo review, connect each focused discussion to the most likely page and repository module, then let the user's active Codex model inspect the code and produce short Chinese TODOs. Code details stay out of the TODO text; an approximate module is available only from a hover icon.",
     "developerName": "Gusgoooo",
     "category": "Productivity",
     "capabilities": [
@@ -29,7 +29,7 @@
     "defaultPrompt": [
       "Start a demo review for this repository.",
       "Show my current demo-review status.",
-      "Finish the review and turn only the discussed changes into tasks."
+      "Finish the review and turn only the discussed changes into concise Chinese TODOs."
     ]
   },
   "mcpServers": "./.mcp.json"

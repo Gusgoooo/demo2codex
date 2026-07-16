@@ -3,6 +3,7 @@ import { appendFile, readFile, readdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { buildEvidenceCodeContext, TASK_GROUNDING_CONTRACT } from "./code-context.mjs";
 import { TRANSLATION_CONSTRAINTS } from "./translation-constraints.mjs";
 import {
   atomicWriteFile,
@@ -54,6 +55,7 @@ export class SessionStore {
           session.bridge_key ||= randomBytes(32).toString("base64url");
           session.finish_requested_at ??= null;
           session.audio_finalized ??= false;
+          session.code_context ??= null;
           this.sessions.set(session.id, session);
         } catch {
           // A repository may have moved or been deleted; keep other sessions recoverable.
@@ -103,7 +105,7 @@ export class SessionStore {
     const directory = path.join(normalizedRepoPath, ".demo2codex", "reviews", id);
     const now = isoTimestamp();
     const session = {
-      schema_version: 2,
+      schema_version: 3,
       id,
       token,
       bridge_key: randomBytes(32).toString("base64url"),
@@ -125,6 +127,7 @@ export class SessionStore {
       audio_bytes: 0,
       audio_finalized: false,
       current_focus: null,
+      code_context: null,
       evidence_files: null,
       artifacts: null,
     };
@@ -155,6 +158,7 @@ export class SessionStore {
 
   publicSession(session, { includeToken = false } = {}) {
     const result = jsonClone(session);
+    delete result.code_context;
     if (!includeToken) {
       delete result.token;
       delete result.bridge_key;
@@ -172,7 +176,7 @@ export class SessionStore {
 
   async requestFinish(id, { waitMs = 15_000 } = {}) {
     const session = this.get(id);
-    if (session.status === "finished") return this.buildResult(session, await this.events(session));
+    if (session.status === "finished") return this.buildGroundedResult(session, await this.events(session));
     if (session.recording_state === "idle" || (session.recording_state === "stopped" && session.audio_finalized)) {
       return this.finish(session.id);
     }
@@ -184,7 +188,7 @@ export class SessionStore {
     while (session.status !== "finished" && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
-    if (session.status === "finished") return this.buildResult(session, await this.events(session));
+    if (session.status === "finished") return this.buildGroundedResult(session, await this.events(session));
     return {
       session_id: session.id,
       status: "finish_pending",
@@ -283,7 +287,7 @@ export class SessionStore {
 
   async finish(id, { requireFinalAudio = false } = {}) {
     const session = this.get(id);
-    if (session.status === "finished") return this.buildResult(session, await this.events(session));
+    if (session.status === "finished") return this.buildGroundedResult(session, await this.events(session));
     if (
       requireFinalAudio &&
       session.recording_state !== "idle" &&
@@ -307,21 +311,53 @@ export class SessionStore {
     session.audio_file = await this.combineAudio(session);
 
     const events = await this.events(session);
-    const result = this.buildResult(session, events);
+    const result = await this.buildGroundedResult(session, events);
     const evidenceDirectory = path.join(session.directory, "evidence");
     await ensureDirectory(evidenceDirectory);
     const files = {
       evidence: path.join(evidenceDirectory, "evidence.json"),
       transcript: path.join(evidenceDirectory, "transcript.md"),
+      code_context: path.join(evidenceDirectory, "code-context.json"),
     };
+    session.evidence_files = files;
+    result.evidence_files = jsonClone(files);
     await Promise.all([
       atomicWriteFile(files.evidence, `${JSON.stringify(result, null, 2)}\n`, { encoding: "utf8" }),
       atomicWriteFile(files.transcript, result.transcript_markdown, { encoding: "utf8" }),
+      atomicWriteFile(files.code_context, `${JSON.stringify(result.code_context, null, 2)}\n`, { encoding: "utf8" }),
     ]);
-    session.evidence_files = files;
-    result.evidence_files = jsonClone(files);
     await this.persist(session);
     return result;
+  }
+
+  async buildGroundedResult(session, events) {
+    const result = this.buildResult(session, events);
+    if (!session.code_context) {
+      try {
+        session.code_context = await buildEvidenceCodeContext({
+          repoPath: session.repo_path,
+          repository: session.repository,
+          focusSegments: result.focus_segments,
+          transcript: result.transcript,
+          notes: result.notes,
+        });
+      } catch (error) {
+        session.code_context = {
+          schema_version: 1,
+          status: "unavailable",
+          strategy: "deterministic-local-code-index",
+          error: error.message,
+          grounding_contract: TASK_GROUNDING_CONTRACT,
+        };
+      }
+      session.updated_at = isoTimestamp();
+      await this.persist(session);
+    }
+    return {
+      ...result,
+      code_context: jsonClone(session.code_context),
+      grounding_contract: TASK_GROUNDING_CONTRACT,
+    };
   }
 
   buildResult(session, events) {
@@ -408,12 +444,10 @@ export class SessionStore {
     if (session.status !== "finished") {
       throw new Error(`Review ${session.id} must finish before model-generated results can be saved.`);
     }
-    if (typeof reviewSummary !== "string" || !reviewSummary.trim()) {
-      throw new Error("review_summary must be a non-empty string.");
-    }
-    if (!Array.isArray(tasks)) throw new Error("tasks must be an array.");
+    const normalizedSummary = validateChineseSummary(reviewSummary);
+    const { publicTasks, grounding } = normalizeModelTasks(tasks);
 
-    const result = this.buildResult(session, await this.events(session));
+    const result = await this.buildGroundedResult(session, await this.events(session));
     const artifactDirectory = path.join(session.directory, "artifacts");
     await ensureDirectory(artifactDirectory);
     const files = {
@@ -421,12 +455,16 @@ export class SessionStore {
       transcript: path.join(artifactDirectory, "transcript.md"),
       tasks: path.join(artifactDirectory, "tasks.json"),
       evidence: path.join(artifactDirectory, "evidence.json"),
+      code_context: path.join(artifactDirectory, "code-context.json"),
+      grounding: path.join(artifactDirectory, "grounding.json"),
     };
     await Promise.all([
-      atomicWriteFile(files.review_summary, reviewSummary, { encoding: "utf8" }),
+      atomicWriteFile(files.review_summary, normalizedSummary, { encoding: "utf8" }),
       atomicWriteFile(files.transcript, result.transcript_markdown, { encoding: "utf8" }),
-      atomicWriteFile(files.tasks, `${JSON.stringify(tasks, null, 2)}\n`, { encoding: "utf8" }),
+      atomicWriteFile(files.tasks, `${JSON.stringify(publicTasks, null, 2)}\n`, { encoding: "utf8" }),
       atomicWriteFile(files.evidence, `${JSON.stringify(result, null, 2)}\n`, { encoding: "utf8" }),
+      atomicWriteFile(files.code_context, `${JSON.stringify(result.code_context, null, 2)}\n`, { encoding: "utf8" }),
+      atomicWriteFile(files.grounding, `${JSON.stringify(grounding, null, 2)}\n`, { encoding: "utf8" }),
     ]);
     session.artifacts = files;
     session.updated_at = isoTimestamp();
@@ -436,7 +474,68 @@ export class SessionStore {
       `${JSON.stringify({ session_id: session.id, artifacts: files, updated_at: session.updated_at }, null, 2)}\n`,
       { encoding: "utf8" },
     );
-    return { session_id: session.id, artifact_directory: artifactDirectory, files };
+    return {
+      session_id: session.id,
+      artifact_directory: artifactDirectory,
+      files,
+      result: await this.getReviewResult(session.id),
+    };
+  }
+
+  async getReviewResult(id) {
+    const session = this.get(id);
+    if (!session.artifacts?.review_summary || !session.artifacts?.tasks) {
+      return {
+        session_id: session.id,
+        status: session.status === "finished" ? "waiting_for_summary" : "recording",
+        review_summary: "",
+        tasks: [],
+        updated_at: session.updated_at,
+      };
+    }
+    const [reviewSummary, storedTasks] = await Promise.all([
+      readFile(session.artifacts.review_summary, "utf8"),
+      readJsonFile(session.artifacts.tasks, []),
+    ]);
+    return {
+      session_id: session.id,
+      status: "ready",
+      review_summary: reviewSummary,
+      tasks: normalizeStoredTasks(storedTasks),
+      updated_at: session.updated_at,
+    };
+  }
+
+  async updateReviewResult(id, { reviewSummary, tasks }) {
+    const session = this.get(id);
+    if (!session.artifacts?.review_summary || !session.artifacts?.tasks) {
+      throw new Error("The review summary is not ready yet.");
+    }
+    const normalizedSummary = validateChineseSummary(reviewSummary);
+    const existingTasks = normalizeStoredTasks(await readJsonFile(session.artifacts.tasks, []));
+    const publicTasks = normalizeUserTasks(tasks, existingTasks);
+    const writes = [
+      atomicWriteFile(session.artifacts.review_summary, normalizedSummary, { encoding: "utf8" }),
+      atomicWriteFile(session.artifacts.tasks, `${JSON.stringify(publicTasks, null, 2)}\n`, { encoding: "utf8" }),
+    ];
+    if (session.artifacts.grounding) {
+      const retainedIds = new Set(publicTasks.map((task) => task.id));
+      const grounding = await readJsonFile(session.artifacts.grounding, []);
+      const retainedGrounding = Array.isArray(grounding)
+        ? grounding.filter((item) => retainedIds.has(item?.id))
+        : [];
+      writes.push(
+        atomicWriteFile(
+          session.artifacts.grounding,
+          `${JSON.stringify(retainedGrounding, null, 2)}\n`,
+          { encoding: "utf8" },
+        ),
+      );
+    }
+    await Promise.all(writes);
+    session.updated_at = isoTimestamp();
+    await this.persist(session);
+    return this.getReviewResult(session.id);
   }
 
   async persist(session) {
@@ -449,9 +548,9 @@ export class SessionStore {
     try {
       registry = JSON.parse(await readFile(this.registryPath, "utf8"));
     } catch {
-      registry = { schema_version: 2, sessions: {} };
+      registry = { schema_version: 3, sessions: {} };
     }
-    registry.schema_version = 2;
+    registry.schema_version = 3;
     registry.sessions ||= {};
     for (const session of this.sessions.values()) {
       registry.sessions[session.id] = {
@@ -473,6 +572,174 @@ function canDiscardEmptySession(session) {
     session.audio_chunks === 0 &&
     session.audio_bytes === 0
   );
+}
+
+function normalizeModelTasks(tasks) {
+  if (!Array.isArray(tasks)) throw new Error("tasks must be an array.");
+  const publicTasks = [];
+  const grounding = [];
+  for (const [index, task] of tasks.entries()) {
+    if (!task || typeof task !== "object" || Array.isArray(task)) {
+      throw new Error(`tasks[${index}] must be an object.`);
+    }
+    const id = typeof task.id === "string" && task.id.trim()
+      ? task.id.trim()
+      : makeId("todo", randomBytes(3));
+    const content = validateTodoContent(task.content, `tasks[${index}].content`);
+    const hidden = validateGrounding(task.grounding, index);
+    publicTasks.push({
+      id,
+      content,
+      module_hint: moduleHintFromCandidates(hidden.module_candidates),
+    });
+    grounding.push({ id, ...hidden });
+  }
+  return { publicTasks, grounding };
+}
+
+function normalizeUserTasks(tasks, existingTasks = []) {
+  if (!Array.isArray(tasks)) throw new Error("tasks must be an array.");
+  const existingById = new Map(existingTasks.map((task) => [task.id, task]));
+  return tasks.map((task, index) => {
+    if (!task || typeof task !== "object" || Array.isArray(task)) {
+      throw new Error(`tasks[${index}] must be an object.`);
+    }
+    const id = typeof task.id === "string" && task.id.trim()
+      ? task.id.trim()
+      : makeId("todo", randomBytes(3));
+    return {
+      id,
+      content: validateTodoContent(task.content, `tasks[${index}].content`),
+      module_hint: existingById.get(id)?.module_hint || null,
+    };
+  });
+}
+
+function validateGrounding(grounding, index) {
+  if (!grounding || typeof grounding !== "object" || Array.isArray(grounding)) {
+    throw new Error(`tasks[${index}].grounding must be an object.`);
+  }
+  const requiredArrays = ["meeting_evidence", "module_candidates", "acceptance_criteria", "open_questions"];
+  for (const field of requiredArrays) {
+    if (!Array.isArray(grounding[field])) {
+      throw new Error(`tasks[${index}].grounding.${field} must be an array.`);
+    }
+  }
+  if (!grounding.meeting_evidence.length) {
+    throw new Error(`tasks[${index}].grounding.meeting_evidence must cite at least one captured item.`);
+  }
+  if (typeof grounding.scope !== "string" || !grounding.scope.trim()) {
+    throw new Error(`tasks[${index}].grounding.scope must be a non-empty string.`);
+  }
+  return {
+    meeting_evidence: grounding.meeting_evidence,
+    module_candidates: grounding.module_candidates,
+    scope: grounding.scope.trim(),
+    acceptance_criteria: grounding.acceptance_criteria,
+    open_questions: grounding.open_questions,
+  };
+}
+
+function moduleHintFromCandidates(candidates) {
+  const normalized = candidates
+    .filter((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate))
+    .slice(0, 2)
+    .map((candidate) => ({
+      module: compactHintText(candidate.module, 80),
+      paths: [...new Set(
+        (Array.isArray(candidate.paths) ? candidate.paths : [])
+          .map(normalizeModulePath)
+          .filter(Boolean),
+      )].slice(0, 3),
+    }))
+    .filter((candidate) => candidate.module || candidate.paths.length);
+  if (!normalized.length) return null;
+  return {
+    label: normalized.map((candidate) => candidate.module).filter(Boolean).join(" / ")
+      || normalized.flatMap((candidate) => candidate.paths).join(" / "),
+    paths: [...new Set(normalized.flatMap((candidate) => candidate.paths))].slice(0, 3),
+  };
+}
+
+function normalizeStoredTasks(tasks) {
+  if (!Array.isArray(tasks)) return [];
+  return tasks.flatMap((task, index) => {
+    if (!task || typeof task !== "object" || Array.isArray(task)) return [];
+    const content = typeof task.content === "string" && task.content.trim()
+      ? task.content.trim()
+      : [task.title, task.details].filter((value) => typeof value === "string" && value.trim()).join("：");
+    if (!content) return [];
+    return [{
+      id: typeof task.id === "string" && task.id.trim() ? task.id.trim() : `todo-${index + 1}`,
+      content,
+      module_hint: normalizeModuleHint(task.module_hint),
+    }];
+  });
+}
+
+function normalizeModuleHint(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const label = compactHintText(value.label, 120);
+  const paths = [...new Set(
+    (Array.isArray(value.paths) ? value.paths : [])
+      .map(normalizeModulePath)
+      .filter(Boolean),
+  )].slice(0, 3);
+  return label || paths.length ? { label: label || paths.join(" / "), paths } : null;
+}
+
+function validateTodoContent(value, label) {
+  const normalized = validateChineseText(value, label).replace(/\s+/g, " ").trim();
+  if (normalized.length > 240) {
+    throw new Error(`${label} must stay concise (240 characters or fewer).`);
+  }
+  if (
+    /```|`[^`]+`/.test(normalized) ||
+    /(?:^|\s)(?:src|app|apps|packages|components|pages|lib|server|client|web)\/[\w./-]+/i.test(normalized) ||
+    /\.(?:[cm]?[jt]sx?|vue|svelte|py|go|rs|swift|java|kt|css|scss|html)\b/i.test(normalized) ||
+    /(?:行号|第\s*\d+\s*行|line\s*\d+)/i.test(normalized)
+  ) {
+    throw new Error(`${label} must not expose code paths, code snippets, file names, or line numbers.`);
+  }
+  return normalized;
+}
+
+function compactHintText(value, limit) {
+  if (typeof value !== "string") return "";
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.slice(0, limit);
+}
+
+function normalizeModulePath(value) {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/\s+/g, "")
+    .replace(/[?#].*$/, "")
+    .replace(/:\d+(?::\d+)?$/, "")
+    .slice(0, 180);
+}
+
+function validateChineseSummary(value) {
+  return validateChineseText(value, "review_summary");
+}
+
+function validateChineseText(value, label) {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${label} must be a non-empty string.`);
+  }
+  const normalized = value.trim();
+  if (!/\p{Script=Han}/u.test(normalized)) {
+    throw new Error(`${label} must be written in Chinese.`);
+  }
+  return normalized;
+}
+
+async function readJsonFile(filePath, fallback) {
+  try {
+    return JSON.parse(await readFile(filePath, "utf8"));
+  } catch {
+    return fallback;
+  }
 }
 
 async function readRegistry(registryPath) {
