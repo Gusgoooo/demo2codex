@@ -30,53 +30,53 @@ function initialiseDemo2CodexEmbed() {
     :host { all: initial; }
     *, *::before, *::after { box-sizing: border-box; }
     .m2p-toolbar {
-      position: fixed; right: 18px; bottom: 18px; display: flex; align-items: center;
-      gap: 8px; max-width: min(520px, calc(100vw - 36px)); min-height: 48px;
-      padding: 7px; border: 1px solid rgba(31,33,29,.14); border-radius: 15px;
-      color: #20221e; background: rgba(255,255,255,.97);
-      box-shadow: 0 16px 42px rgba(21,24,20,.2); pointer-events: auto;
-      font: 600 12px/1.2 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      -webkit-font-smoothing: antialiased; backdrop-filter: blur(12px);
+      position: fixed; right: 16px; bottom: 16px; display: flex; align-items: center;
+      gap: 6px; max-width: min(460px, calc(100vw - 32px)); min-height: 44px;
+      padding: 6px; border: 1px solid oklch(.922 0 0); border-radius: 10px;
+      color: oklch(.145 0 0); background: oklch(1 0 0);
+      box-shadow: 0 10px 30px rgba(0,0,0,.12); pointer-events: auto;
+      font: 500 12px/1 "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
     }
-    .m2p-toolbar[data-minimized="true"] { padding: 5px; border-radius: 999px; }
-    .m2p-brand { display: flex; align-items: center; gap: 9px; padding: 0 7px 0 4px; min-width: 0; }
-    .m2p-logo { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center;
-      border-radius: 9px; color: #fff; background: #20221e; font-size: 9px; font-weight: 850; letter-spacing: .04em; }
-    .m2p-copy { display: grid; gap: 2px; min-width: 0; }
-    .m2p-title { overflow: hidden; max-width: 150px; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-    .m2p-status { display: flex; align-items: center; gap: 5px; color: #74776e; font-size: 9px; font-weight: 600; }
-    .m2p-status::before { width: 6px; height: 6px; border-radius: 50%; background: #3c8a67; content: ""; }
-    .m2p-status[data-offline="true"]::before { background: #b7594e; }
-    .m2p-divider { width: 1px; height: 26px; background: #e2e3dd; }
-    .m2p-button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 6px;
-      padding: 0 11px; border: 1px solid #dcded5; border-radius: 9px; color: #20221e; background: #fff;
-      cursor: pointer; font: 750 11px/1 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    .m2p-button:hover { background: #f5f6f2; }
-    .m2p-button:focus-visible { outline: 3px solid rgba(49,113,81,.23); outline-offset: 2px; }
-    .m2p-button-primary { border-color: #295c48; color: #fff; background: #295c48; }
-    .m2p-button-primary:hover { background: #174433; }
-    .m2p-button-focus { border-color: #91b7a3; color: #174433; background: #e2f0e8; }
-    .m2p-button-danger { border-color: #e8c4bf; color: #9f3f35; background: #faeae7; }
-    .m2p-icon-button { width: 32px; padding: 0; color: #777a72; }
-    .m2p-mini-button { display: grid; width: 38px; height: 38px; place-items: center; border: 0; border-radius: 50%;
-      color: #fff; background: #20221e; cursor: pointer; font: 850 9px/1 Inter, sans-serif; letter-spacing: .04em; }
-    .m2p-highlight { position: fixed; display: none; border: 2px solid #2e8b63; border-radius: 5px;
-      background: rgba(46,139,99,.10); box-shadow: 0 0 0 1px rgba(255,255,255,.8) inset; pointer-events: none; }
+    .m2p-toolbar[data-minimized="true"] { padding: 5px; border-radius: 10px; }
+    .m2p-brand { display: flex; align-items: center; gap: 8px; padding: 0 6px 0 2px; min-width: 0; }
+    .m2p-logo { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center;
+      border-radius: 8px; color: oklch(.985 0 0); background: oklch(.205 0 0); font-size: 9px; font-weight: 700; letter-spacing: .04em; }
+    .m2p-copy { display: grid; gap: 3px; min-width: 0; }
+    .m2p-title { overflow: hidden; max-width: 130px; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; }
+    .m2p-status { display: flex; align-items: center; gap: 5px; color: oklch(.556 0 0); font-size: 9px; }
+    .m2p-status::before { width: 5px; height: 5px; border-radius: 50%; background: oklch(.527 .154 150.069); content: ""; }
+    .m2p-status[data-offline="true"]::before { background: oklch(.577 .245 27.325); }
+    .m2p-divider { width: 1px; height: 24px; background: oklch(.922 0 0); }
+    .m2p-button { display: inline-flex; height: 32px; align-items: center; justify-content: center; gap: 6px;
+      padding: 0 11px; border: 1px solid oklch(.922 0 0); border-radius: 8px; color: oklch(.145 0 0); background: oklch(1 0 0);
+      cursor: pointer; font: 500 11px/1 "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif; }
+    .m2p-button:hover { background: oklch(.97 0 0); }
+    .m2p-button:focus-visible { outline: none; box-shadow: 0 0 0 3px oklch(.708 0 0 / .28); }
+    .m2p-button-primary { border-color: oklch(.205 0 0); color: oklch(.985 0 0); background: oklch(.205 0 0); }
+    .m2p-button-primary:hover { background: oklch(.269 0 0); }
+    .m2p-button-focus { border-color: oklch(.708 0 0); background: oklch(.97 0 0); }
+    .m2p-button-danger { border-color: oklch(.577 .245 27.325 / .35); color: oklch(.577 .245 27.325); background: oklch(.971 .013 17.38); }
+    .m2p-icon-button { width: 32px; padding: 0; color: oklch(.556 0 0); }
+    .m2p-mini-button { display: grid; width: 32px; height: 32px; place-items: center; border: 0; border-radius: 8px;
+      color: oklch(.985 0 0); background: oklch(.205 0 0); cursor: pointer; font: 700 9px/1 "Geist", system-ui, sans-serif; letter-spacing: .04em; }
+    .m2p-highlight { position: fixed; display: none; border: 2px solid oklch(.488 .243 264.376); border-radius: 6px;
+      background: oklch(.488 .243 264.376 / .08); box-shadow: 0 0 0 1px rgba(255,255,255,.8) inset; pointer-events: none; }
     .m2p-highlight[data-visible="true"] { display: block; }
-    .m2p-highlight[data-focused="true"] { border-width: 3px; border-color: #cf5a47; background: rgba(207,90,71,.08); }
+    .m2p-highlight[data-focused="true"] { border-width: 3px; border-color: oklch(.577 .245 27.325); background: oklch(.577 .245 27.325 / .07); }
     .m2p-highlight-label { position: absolute; left: -2px; bottom: calc(100% + 5px); max-width: min(360px, 80vw);
-      overflow: hidden; padding: 5px 8px; border-radius: 6px; color: #fff; background: #205f46;
-      text-overflow: ellipsis; white-space: nowrap; font: 750 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .m2p-highlight[data-focused="true"] .m2p-highlight-label { background: #a34135; }
+      overflow: hidden; padding: 5px 8px; border-radius: 6px; color: oklch(.985 0 0); background: oklch(.205 0 0);
+      text-overflow: ellipsis; white-space: nowrap; font: 500 10px/1.2 "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .m2p-highlight[data-focused="true"] .m2p-highlight-label { background: oklch(.577 .245 27.325); }
     .m2p-picker-help { position: fixed; top: 16px; left: 50%; display: none; max-width: calc(100vw - 32px);
-      padding: 10px 14px; border-radius: 999px; color: #fff; background: rgba(24,28,23,.92);
-      box-shadow: 0 10px 30px rgba(0,0,0,.18); transform: translateX(-50%); pointer-events: none;
-      font: 650 11px/1.3 Inter, ui-sans-serif, sans-serif; }
+      padding: 8px 11px; border-radius: 8px; color: oklch(.985 0 0); background: oklch(.205 0 0);
+      box-shadow: 0 10px 30px rgba(0,0,0,.14); transform: translateX(-50%); pointer-events: none;
+      font: 500 11px/1.3 "Geist", ui-sans-serif, system-ui, sans-serif; }
     .m2p-picker-help[data-visible="true"] { display: block; }
-    .m2p-toast { position: fixed; right: 18px; bottom: 82px; max-width: min(360px, calc(100vw - 36px));
-      padding: 10px 13px; border-radius: 9px; color: #fff; background: #2b2e29; opacity: 0;
-      box-shadow: 0 10px 28px rgba(0,0,0,.2); transform: translateY(6px); transition: opacity .15s, transform .15s;
-      pointer-events: none; font: 600 11px/1.45 Inter, ui-sans-serif, sans-serif; }
+    .m2p-toast { position: fixed; right: 16px; bottom: 70px; max-width: min(340px, calc(100vw - 32px));
+      padding: 9px 12px; border: 1px solid oklch(.922 0 0); border-radius: 8px; color: oklch(.145 0 0); background: oklch(1 0 0); opacity: 0;
+      box-shadow: 0 10px 28px rgba(0,0,0,.12); transform: translateY(6px); transition: opacity .15s, transform .15s;
+      pointer-events: none; font: 500 11px/1.45 "Geist", ui-sans-serif, system-ui, sans-serif; }
     .m2p-toast[data-visible="true"] { opacity: 1; transform: translateY(0); }
     @media (max-width: 620px) {
       .m2p-toolbar { right: 10px; bottom: 10px; left: 10px; max-width: none; }
@@ -97,12 +97,12 @@ function initialiseDemo2CodexEmbed() {
       <span class="m2p-logo" aria-hidden="true">D2C</span>
       <span class="m2p-copy">
         <span class="m2p-title">Demo2Codex</span>
-        <span class="m2p-status">正在连接本地会话</span>
+        <span class="m2p-status">连接中</span>
       </span>
     </div>
     <span class="m2p-divider" aria-hidden="true"></span>
-    <button class="m2p-button m2p-button-primary" data-action="recorder" type="button">● 打开录音台</button>
-    <button class="m2p-button" data-action="pick" type="button">⌖ 选择页面区域</button>
+    <button class="m2p-button m2p-button-primary" data-action="recorder" type="button">录音</button>
+    <button class="m2p-button" data-action="pick" type="button">定位</button>
     <button class="m2p-button m2p-icon-button" data-action="minimize" type="button" aria-label="收起 Demo2Codex">—</button>
   `;
 
@@ -110,7 +110,7 @@ function initialiseDemo2CodexEmbed() {
   const focusHighlight = createHighlight("focus");
   const pickerHelp = document.createElement("div");
   pickerHelp.className = "m2p-picker-help";
-  pickerHelp.textContent = "点击页面元素开始对焦 · 按 Esc 取消";
+  pickerHelp.textContent = "选择页面区域 · Esc 取消";
   const toastElement = document.createElement("div");
   toastElement.className = "m2p-toast";
 
@@ -211,7 +211,7 @@ function initialiseDemo2CodexEmbed() {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       updateSession(sessionDetails(await response.json()));
     } catch (error) {
-      statusElement.textContent = "等待本地服务";
+      statusElement.textContent = "连接中";
       statusElement.dataset.offline = "true";
     }
   }
@@ -223,14 +223,14 @@ function initialiseDemo2CodexEmbed() {
     state.session = nextSession;
     if (!nextSession) {
       titleElement.textContent = "Demo2Codex";
-      statusElement.textContent = "暂无活动评审";
+      statusElement.textContent = "无评审";
       statusElement.dataset.offline = "true";
       recorderButton.disabled = true;
       pickButton.disabled = true;
       return;
     }
     titleElement.textContent = nextSession.title;
-    statusElement.textContent = "评审上下文已连接";
+    statusElement.textContent = "已连接";
     delete statusElement.dataset.offline;
     recorderButton.disabled = false;
     pickButton.disabled = false;
@@ -458,8 +458,8 @@ function initialiseDemo2CodexEmbed() {
     });
     showToast(
       delivered
-        ? `已对焦“${descriptor.label}”，接下来的讨论会归到这个页面区域。`
-        : "已在页面标记区域，但暂时无法同步到本地评审。",
+        ? `已定位：${descriptor.label}`
+        : "定位已标记，暂未同步。",
     );
   }
 
@@ -478,17 +478,17 @@ function initialiseDemo2CodexEmbed() {
       startedAt: previous.startedAt,
       reason,
     });
-    if (reason === "user.ended") showToast("已结束页面对焦，后续讨论回到整个评审。 ");
+    if (reason === "user.ended") showToast("已结束定位。");
   }
 
   function renderFocusButton() {
     if (state.focus) {
       pickButton.className = "m2p-button m2p-button-danger";
-      pickButton.textContent = `■ 结束对焦：${state.focus.element.label.slice(0, 18)}`;
+      pickButton.textContent = `结束：${state.focus.element.label.slice(0, 14)}`;
       return;
     }
     pickButton.className = "m2p-button";
-    pickButton.textContent = "⌖ 选择页面区域";
+    pickButton.textContent = "定位";
   }
 
   function refreshHighlights() {

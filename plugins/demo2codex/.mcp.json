@@ -2,7 +2,7 @@
   "mcpServers": {
     "demo2codex": {
       "title": "Demo2Codex",
-      "description": "Capture local demo-review transcripts and page-focus evidence for the user's active Codex model.",
+      "description": "Map local demo-review evidence to relevant repository modules so the user's active Codex model knows where to inspect.",
       "command": "node",
       "args": [
         "./mcp/server.mjs"

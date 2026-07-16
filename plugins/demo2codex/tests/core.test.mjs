@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+import { buildEvidenceCodeContext } from "../mcp/lib/code-context.mjs";
 import { captureRepositorySnapshot } from "../mcp/lib/repository-snapshot.mjs";
 import { SessionStore } from "../mcp/lib/session-store.mjs";
 import { TRANSLATION_CONSTRAINTS } from "../mcp/lib/translation-constraints.mjs";
@@ -20,12 +21,21 @@ async function makeDemoRepository() {
       devDependencies: { vite: "^6.0.0" },
     }),
   );
+  await writeFile(path.join(repoPath, "package-lock.json"), "{}\n");
   await writeFile(path.join(repoPath, "index.html"), "<!doctype html><body><div id=\"root\"></div></body>\n");
-  await writeFile(path.join(repoPath, "src", "components", "PricingCard.tsx"), "export function PricingCard(){return <section />}\n");
+  await writeFile(
+    path.join(repoPath, "src", "components", "PricingCard.tsx"),
+    [
+      "export function PricingCard() {",
+      "  return <section><button id=\"upgrade\">升级套餐</button></section>;",
+      "}",
+      "",
+    ].join("\n"),
+  );
   return repoPath;
 }
 
-test("repository snapshot keeps only path, repository name, and Git facts", async (t) => {
+test("repository snapshot includes a lightweight codebase profile", async (t) => {
   const repoPath = await makeDemoRepository();
   t.after(() => rm(repoPath, { recursive: true, force: true }));
 
@@ -33,7 +43,44 @@ test("repository snapshot keeps only path, repository name, and Git facts", asyn
   assert.equal(snapshot.repo_path, await realpath(repoPath));
   assert.equal(snapshot.repository.name, "demo-review-fixture");
   assert.equal(snapshot.repository.git, null);
-  assert.deepEqual(Object.keys(snapshot.repository).sort(), ["git", "name"]);
+  assert.deepEqual(Object.keys(snapshot.repository).sort(), ["context", "git", "name"]);
+  assert.deepEqual(snapshot.repository.context.frameworks, ["React", "Vite"]);
+  assert.equal(snapshot.repository.context.package_manager, "npm");
+  assert.ok(snapshot.repository.context.source_roots.includes("src"));
+  assert.ok(snapshot.repository.context.languages.some((language) => language.name === "TypeScript"));
+});
+
+test("code context maps page-focus evidence to approximate repository modules", async (t) => {
+  const repoPath = await makeDemoRepository();
+  t.after(() => rm(repoPath, { recursive: true, force: true }));
+  const snapshot = await captureRepositorySnapshot(repoPath);
+  const context = await buildEvidenceCodeContext({
+    repoPath,
+    repository: snapshot.repository,
+    focusSegments: [{
+      focus_id: "focus-pricing",
+      page: { pathname: "/pricing", title: "Pricing" },
+      focus: {
+        label: "升级套餐",
+        selector: "#upgrade",
+        component: "PricingCard",
+        componentStack: ["PricingCard", "PricingPage"],
+      },
+      transcript: ["主按钮需要更突出。"],
+      transcript_event_ids: ["event-pricing"],
+    }],
+  });
+
+  assert.equal(context.status, "ready");
+  assert.equal(context.strategy, "deterministic-local-code-index");
+  const mapping = context.focus_mappings[0];
+  assert.equal(mapping.location_status, "candidate");
+  assert.equal(mapping.module_candidates[0].module, "PricingCard");
+  assert.deepEqual(mapping.module_candidates[0].paths, ["src/components/PricingCard.tsx"]);
+  assert.equal(mapping.module_candidates[0].confidence, "high");
+  assert.equal(mapping.module_candidates[0].location, undefined);
+  assert.equal(mapping.module_candidates[0].excerpt, undefined);
+  assert.ok(mapping.module_candidates[0].reasons.some((reason) => reason.kind === "component"));
 });
 
 test("session returns raw evidence and saves model-generated results", async (t) => {
@@ -80,19 +127,120 @@ test("session returns raw evidence and saves model-generated results", async (t)
   assert.equal(finished.focus_segments.length, 1);
   assert.equal(finished.focus_segments[0].focus_id, "focus-pricing");
   assert.equal(finished.focus_segments[0].focus.source, `${repoPath}/src/components/PricingCard.tsx`);
+  assert.equal(finished.code_context.focus_mappings[0].location_status, "exact");
+  assert.deepEqual(
+    finished.code_context.focus_mappings[0].module_candidates[0].paths,
+    ["src/components/PricingCard.tsx"],
+  );
+  assert.equal(finished.code_context.focus_mappings[0].module_candidates[0].confidence, "high");
+  assert.deepEqual(finished.grounding_contract.public_todo_fields, ["content"]);
+  assert.ok(finished.grounding_contract.internal_grounding_fields.includes("module_candidates"));
   assert.deepEqual(finished.translation_constraints, TRANSLATION_CONSTRAINTS);
   assert.equal((await readFile(finished.audio_file)).toString(), "audio-aaudio-b");
   assert.ok(finished.evidence_files.evidence);
+  assert.ok(finished.evidence_files.code_context);
   assert.equal(JSON.parse(await readFile(finished.evidence_files.evidence, "utf8")).repo_path, repoPath);
+  assert.equal(
+    JSON.parse(await readFile(finished.evidence_files.code_context, "utf8")).focus_mappings[0].module_candidates[0].module,
+    "PricingCard",
+  );
+
+  await assert.rejects(
+    store.saveArtifacts(session.id, {
+      reviewSummary: "# 不完整结果\n",
+      tasks: [{ content: "强化套餐页升级按钮。" }],
+    }),
+    /grounding must be an object/,
+  );
+  await assert.rejects(
+    store.saveArtifacts(session.id, {
+      reviewSummary: "只调整套餐页主按钮层级。",
+      tasks: [{
+        content: "修改 src/components/PricingCard.tsx 里的按钮。",
+        grounding: {
+          meeting_evidence: ["focus-pricing"],
+          module_candidates: [],
+          scope: "仅调整套餐页按钮。",
+          acceptance_criteria: [],
+          open_questions: [],
+        },
+      }],
+    }),
+    /must not expose code paths/,
+  );
 
   const artifacts = await store.saveArtifacts(session.id, {
     reviewSummary: "# 评审总结\n\n只调整套餐页主按钮层级。\n",
-    tasks: [{ title: "强化升级按钮", open_questions: [] }],
+    tasks: [{
+      id: "todo-pricing",
+      content: "把套餐页的升级按钮做得更突出，但不要改变卡片整体层级。",
+      grounding: {
+        meeting_evidence: ["focus-pricing", "主按钮需要更突出，但不要改变卡片整体层级。"],
+        module_candidates: [{
+          module: "PricingCard",
+          paths: ["src/components/PricingCard.tsx"],
+        }],
+        scope: "仅调整套餐页升级按钮的视觉层级，不改变卡片整体结构。",
+        acceptance_criteria: ["升级按钮比卡片内次要操作更突出。"],
+        open_questions: [],
+      },
+    }],
   });
   assert.deepEqual(JSON.parse(await readFile(artifacts.files.tasks, "utf8")), [
-    { title: "强化升级按钮", open_questions: [] },
+    {
+      id: "todo-pricing",
+      content: "把套餐页的升级按钮做得更突出，但不要改变卡片整体层级。",
+      module_hint: {
+        label: "PricingCard",
+        paths: ["src/components/PricingCard.tsx"],
+      },
+    },
   ]);
+  assert.deepEqual(JSON.parse(await readFile(artifacts.files.grounding, "utf8")), [
+    {
+      id: "todo-pricing",
+      meeting_evidence: ["focus-pricing", "主按钮需要更突出，但不要改变卡片整体层级。"],
+      module_candidates: [{
+        module: "PricingCard",
+        paths: ["src/components/PricingCard.tsx"],
+      }],
+      scope: "仅调整套餐页升级按钮的视觉层级，不改变卡片整体结构。",
+      acceptance_criteria: ["升级按钮比卡片内次要操作更突出。"],
+      open_questions: [],
+    },
+  ]);
+  assert.deepEqual(artifacts.result.tasks[0], {
+    id: "todo-pricing",
+    content: "把套餐页的升级按钮做得更突出，但不要改变卡片整体层级。",
+    module_hint: {
+      label: "PricingCard",
+      paths: ["src/components/PricingCard.tsx"],
+    },
+  });
+  assert.equal(artifacts.result.tasks[0].grounding, undefined);
+
+  const groundingBeforeEdit = await readFile(artifacts.files.grounding, "utf8");
+  const edited = await store.updateReviewResult(session.id, {
+    reviewSummary: "只调整套餐页按钮。",
+    tasks: [
+      {
+        id: "todo-pricing",
+        content: "把套餐页升级按钮的视觉层级提高，其他卡片内容保持不变。",
+      },
+      {
+        id: "todo-user-added",
+        content: "确认移动端按钮状态是否一致。",
+      },
+    ],
+  });
+  assert.deepEqual(edited.tasks[0].module_hint, {
+    label: "PricingCard",
+    paths: ["src/components/PricingCard.tsx"],
+  });
+  assert.equal(edited.tasks[1].module_hint, null);
+  assert.equal(await readFile(artifacts.files.grounding, "utf8"), groundingBeforeEdit);
   assert.match(await readFile(artifacts.files.review_summary, "utf8"), /只调整套餐页/);
+  assert.ok(artifacts.files.code_context);
   assert.equal(
     JSON.parse(await readFile(path.join(repoPath, ".demo2codex", "latest.json"), "utf8")).session_id,
     session.id,

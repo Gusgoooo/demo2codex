@@ -41,7 +41,7 @@ const tools = [
   {
     name: "start_review",
     title: "Start a Demo Review",
-    description: "Start a local demo-review session for the current repository, open the recorder workflow, and install the optional page-focus bridge. Use the captured evidence later; do not infer requirements during this call.",
+    description: "Start a local demo-review session grounded in the current repository. Capture a lightweight repository profile, open the recorder workflow, and install the page-focus bridge that can collect route, selector, framework component, component stack, and source-file evidence.",
     inputSchema: {
       type: "object",
       properties: {
@@ -77,7 +77,7 @@ const tools = [
   {
     name: "finish_review",
     title: "Finish a Demo Review",
-    description: "Finish a demo review and return the raw evidence package: transcript, notes, page-focus segments, repository path and Git snapshot, audio path, and narrow translation constraints. The current Codex model should inspect the repository and translate only the user's stated changes into tasks.",
+    description: "Finish a demo review and return transcript evidence plus a lightweight repository module index. Each focused discussion is matched using captured source, component, route, selector, visible text, and code terms, producing relevant modules, paths, confidence, and reasons without code excerpts or line-level instructions. The user's active Codex model should inspect those modules and produce only the stated Chinese TODOs.",
     inputSchema: {
       type: "object",
       properties: { session_id: { type: "string" } },
@@ -92,14 +92,45 @@ const tools = [
   {
     name: "save_review_result",
     title: "Save Demo Review Tasks",
-    description: "Save the review summary and structured tasks produced by the user's active Codex model. This tool stores the model output without generating or expanding requirements.",
+    description: "Save a Chinese review summary and editable TODO list. Each TODO is one short, direct Chinese instruction like a prompt the user would give Codex. Repository module clues remain separate and appear only as a compact hover hint in the recorder UI.",
     inputSchema: {
       type: "object",
       required: ["review_summary", "tasks"],
       properties: {
         session_id: { type: "string" },
         review_summary: { type: "string" },
-        tasks: { type: "array", items: { type: "object" } },
+        tasks: {
+          type: "array",
+          items: {
+            type: "object",
+            required: [
+              "content",
+              "grounding",
+            ],
+            properties: {
+              id: { type: "string" },
+              content: { type: "string", description: "One concise Chinese modification instruction. Do not include code paths, code details, evidence fields, or implementation commentary." },
+              grounding: {
+                type: "object",
+                description: "Hidden internal evidence. It is stored separately and is not returned by the user-facing result API.",
+                required: ["meeting_evidence", "module_candidates", "scope", "acceptance_criteria", "open_questions"],
+                properties: {
+                  meeting_evidence: { type: "array", items: {} },
+                  module_candidates: {
+                    type: "array",
+                    description: "Hidden module-index clues with approximate module names and repository paths; do not include code excerpts, symbols, or line anchors.",
+                    items: { type: "object" },
+                  },
+                  scope: { type: "string" },
+                  acceptance_criteria: { type: "array", items: { type: "string" } },
+                  open_questions: { type: "array", items: { type: "string" } },
+                },
+                additionalProperties: true,
+              },
+            },
+            additionalProperties: true,
+          },
+        },
       },
       additionalProperties: false,
     },
@@ -135,7 +166,7 @@ function listedResources() {
       uri: "demo2codex://finish-review",
       name: "demo2codex_finish_review",
       title: "Finish a Demo2Codex Review",
-      description: "Action resource: read this URI to finish the active review and retrieve its raw evidence when the finish_review tool is deferred or unavailable.",
+      description: "Action resource: read this URI to finish the active review and retrieve meeting evidence mapped to an approximate repository module index when the finish_review tool is deferred or unavailable.",
       mimeType: "application/json",
     },
   ];
@@ -160,7 +191,7 @@ const resourceTemplates = [
     uriTemplate: "demo2codex://finish-review{?session_id}",
     name: "demo2codex_finish_review_by_id",
     title: "Finish a Demo2Codex Review by ID",
-    description: "Finish a specific review session and retrieve its raw evidence.",
+    description: "Finish a specific review session and retrieve its code-grounded evidence package.",
     mimeType: "application/json",
   },
 ];
@@ -222,8 +253,34 @@ async function callTool(name, args = {}) {
         translation_constraints: TRANSLATION_CONSTRAINTS,
       };
     }
-    case "finish_review":
-      return store.requestFinish(args.session_id);
+    case "finish_review": {
+      const result = await store.requestFinish(args.session_id);
+      if (result.status !== "finished") return result;
+      const session = store.get(result.session_id);
+      return {
+        ...result,
+        result_submission: {
+          method: "POST",
+          url: `${httpServer.url}/api/sessions/${encodeURIComponent(session.id)}/result?token=${encodeURIComponent(session.token)}`,
+          content_type: "application/json",
+          body_contract: {
+            review_summary: "Chinese string",
+            tasks: [{
+              id: "optional stable string",
+              content: "one concise Chinese modification instruction",
+              grounding: {
+                meeting_evidence: "array with at least one captured item",
+                module_candidates: "array of approximate module names and repository paths",
+                scope: "non-empty string",
+                acceptance_criteria: "array of strings",
+                open_questions: "array of strings",
+              },
+            }],
+          },
+          instruction: "If save_review_result is deferred, submit the same JSON body directly to this local URL. This is a first-class plugin path; do not create a manual session or ask the user to reinstall.",
+        },
+      };
+    }
     case "save_review_result":
       return store.saveArtifacts(args.session_id, { reviewSummary: args.review_summary, tasks: args.tasks });
     default:
@@ -332,8 +389,8 @@ async function handleMessage(message) {
           tools: { listChanged: false },
           resources: { subscribe: false, listChanged: false },
         },
-        serverInfo: { name: "demo2codex", version: "0.3.0" },
-        instructions: "Use start_review when the user asks to begin a demo review. Codex may defer custom MCP tools: if start_review, review_status, or finish_review is not callable, use the Demo2Codex resources with the same names through list_mcp_resources/read_mcp_resource. The start resource includes the current workspace when Codex provides it; otherwise use the start resource template and pass the current workspace as repo_path. Read demo2codex://start-review or its repository-scoped form before claiming the recorder is unavailable. Do not ask the user to reinstall merely because a custom tool is absent. Repeated starts for the same repository resume the active session. Use finish_review (or the finish resource) to retrieve raw evidence, translate only the user's stated changes against the repository, then use save_review_result when callable to persist the focused summary and tasks.",
+        serverInfo: { name: "demo2codex", version: "0.4.0" },
+        instructions: "Use start_review when the user asks to begin a demo review. Codex may defer custom MCP tools: if start_review, review_status, or finish_review is not callable, use the Demo2Codex resources through list_mcp_resources/read_mcp_resource. Read demo2codex://start-review or its repository-scoped form before claiming the recorder is unavailable. Repeated starts for the same repository resume the active session. Use finish_review (or the finish resource) to retrieve transcript evidence plus a lightweight module index. The module index only tells you which page, feature area, component, and repository paths are likely relevant; it contains no exact edit instructions, so inspect the real code yourself. User-facing output has three simple stages: recording, a collapsed read-only transcript, and an editable Chinese summary/TODO list. Each saved TODO exposes one short, direct Chinese instruction. Keep meeting evidence, module candidates, narrow scope, acceptance criteria, and open questions inside its grounding object. The UI may derive only a compact module hover hint from module candidates. Use save_review_result when callable. If it is deferred, POST the identical JSON body to the result_submission URL returned by finish_review; this is a supported plugin path and must not trigger manual session creation or a reinstall request.",
       };
     case "notifications/initialized":
       rootsReady = discoverClientRoots();

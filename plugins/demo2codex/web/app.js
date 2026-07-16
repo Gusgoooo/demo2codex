@@ -24,18 +24,25 @@ const elements = {
   interimTranscript: document.querySelector("#interimTranscript"),
   levelBar: document.querySelector("#levelBar"),
   levelTrack: document.querySelector(".level-track"),
-  manualTranscript: document.querySelector("#manualTranscript"),
-  manualTranscriptForm: document.querySelector("#manualTranscriptForm"),
   pauseButton: document.querySelector("#pauseButton"),
   pauseButtonText: document.querySelector("#pauseButtonText"),
   recordingState: document.querySelector("#recordingState"),
   recordingStateText: document.querySelector("#recordingStateText"),
+  resultCard: document.querySelector("#resultCard"),
+  resultForm: document.querySelector("#resultForm"),
+  resultSavedAt: document.querySelector("#resultSavedAt"),
+  resultStatus: document.querySelector("#resultStatus"),
+  resultWaiting: document.querySelector("#resultWaiting"),
+  reviewSummary: document.querySelector("#reviewSummary"),
   sessionLabel: document.querySelector("#sessionLabel"),
   speechSupportText: document.querySelector("#speechSupportText"),
   speechToggle: document.querySelector("#speechToggle"),
   startButton: document.querySelector("#startButton"),
   timer: document.querySelector("#timer"),
   toastRegion: document.querySelector("#toastRegion"),
+  todoList: document.querySelector("#todoList"),
+  addTodoButton: document.querySelector("#addTodoButton"),
+  transcriptCountLabel: document.querySelector("#transcriptCountLabel"),
   transcriptList: document.querySelector("#transcriptList"),
 };
 
@@ -59,6 +66,9 @@ const state = {
   recognitionRunning: false,
   recordingId: globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`,
   recordingStatus: "idle",
+  resultDirty: false,
+  resultLoaded: false,
+  resultPollInterval: null,
   segmentStartedAt: 0,
   speechEnabled: true,
   timerInterval: null,
@@ -96,7 +106,7 @@ function toast(message, type = "info") {
 }
 
 function setConnectionStatus(status, label) {
-  elements.connectionBadge.className = `badge badge-${status}`;
+  elements.connectionBadge.dataset.state = status;
   elements.connectionBadge.querySelector("span:last-child").textContent = label;
 }
 
@@ -116,6 +126,131 @@ function setFocusSummary(focus) {
     delete elements.focusSummary.dataset.active;
     elements.focusSummary.querySelector("span:last-child").textContent = "当前为全局评审记录";
   }
+}
+
+function setResultStatus(stateValue, label) {
+  elements.resultStatus.dataset.state = stateValue;
+  elements.resultStatus.textContent = label;
+}
+
+function showResultSection() {
+  elements.resultCard.hidden = false;
+  if (!state.resultPollInterval) {
+    state.resultPollInterval = window.setInterval(refreshReviewResult, 3_000);
+  }
+}
+
+function createTodoItem(task = {}) {
+  const item = document.createElement("div");
+  item.className = "todo-item";
+  item.dataset.todoId = task.id || globalThis.crypto?.randomUUID?.() || `todo-${Date.now()}`;
+
+  const content = document.createElement("textarea");
+  content.className = "todo-content";
+  content.rows = 2;
+  content.placeholder = "直接描述需要修改什么";
+  content.value = task.content || "";
+
+  const actions = document.createElement("div");
+  actions.className = "todo-actions";
+
+  if (task.module_hint) {
+    const tooltip = document.createElement("span");
+    tooltip.className = "tooltip";
+
+    const location = document.createElement("button");
+    location.type = "button";
+    location.className = "button button-ghost button-icon";
+    location.setAttribute("aria-label", "查看大概模块位置");
+    location.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"></path><circle cx="12" cy="10" r="2"></circle></svg>';
+
+    const hint = document.createElement("span");
+    hint.className = "tooltip-content";
+    hint.setAttribute("role", "tooltip");
+    const label = document.createElement("strong");
+    label.textContent = task.module_hint.label || "相关模块";
+    hint.append(label);
+    for (const modulePath of task.module_hint.paths || []) {
+      const pathLabel = document.createElement("code");
+      pathLabel.textContent = modulePath;
+      hint.append(pathLabel);
+    }
+    tooltip.append(location, hint);
+    actions.append(tooltip);
+  }
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "button button-ghost button-icon todo-remove";
+  remove.setAttribute("aria-label", "删除这条 TODO");
+  remove.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"></path></svg>';
+  actions.append(remove);
+
+  item.append(content, actions);
+  return item;
+}
+
+function renderReviewResult(result) {
+  if (state.resultDirty) return;
+  elements.reviewSummary.value = result.review_summary || "";
+  elements.todoList.replaceChildren(...(result.tasks || []).map(createTodoItem));
+  elements.resultWaiting.hidden = true;
+  elements.resultForm.hidden = false;
+  elements.resultSavedAt.textContent = result.updated_at
+    ? `更新于 ${new Date(result.updated_at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}`
+    : "";
+  setResultStatus("ready", "可编辑");
+  state.resultLoaded = true;
+  if (state.resultPollInterval) {
+    window.clearInterval(state.resultPollInterval);
+    state.resultPollInterval = null;
+  }
+}
+
+async function refreshReviewResult() {
+  if (!sessionId || !token || state.resultDirty) return;
+  try {
+    const response = await fetch(apiUrl(`/api/sessions/${encodeURIComponent(sessionId)}/result`), {
+      headers: authHeaders(),
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const result = await response.json();
+    showResultSection();
+    if (result.status === "ready") {
+      renderReviewResult(result);
+    } else {
+      elements.resultWaiting.hidden = false;
+      elements.resultForm.hidden = true;
+      setResultStatus("waiting", "等待生成");
+    }
+  } catch (error) {
+    console.warn("[Demo2Codex] Could not load review result", error);
+  }
+}
+
+function collectTodos() {
+  return [...elements.todoList.querySelectorAll(".todo-item")].map((item) => ({
+    id: item.dataset.todoId,
+    content: item.querySelector(".todo-content").value.trim(),
+  }));
+}
+
+async function saveReviewResult() {
+  const response = await fetch(apiUrl(`/api/sessions/${encodeURIComponent(sessionId)}/result`), {
+    method: "PUT",
+    headers: authHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({
+      review_summary: elements.reviewSummary.value.trim(),
+      tasks: collectTodos(),
+    }),
+    cache: "no-store",
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+  state.resultDirty = false;
+  renderReviewResult(body);
+  toast("会后总结和 TODO 已保存。");
 }
 
 function formatDuration(milliseconds) {
@@ -244,13 +379,13 @@ async function updateBackupStatus() {
   const pending = await allPendingChunks();
   if (!state.db) {
     elements.backupStatus.textContent = pending.length
-      ? `${pending.length} 个片段仅保存在当前页面内存中`
-      : "浏览器本地备份不可用";
+      ? `${pending.length} 条待同步`
+      : "备份不可用";
     return;
   }
   elements.backupStatus.textContent = pending.length
-    ? `${pending.length} 个录音片段已在本机备份，等待同步`
-    : "录音片段已在本机安全备份并完成同步";
+    ? `${pending.length} 条待同步`
+    : "已备份";
 }
 
 function nextSequence() {
@@ -344,10 +479,10 @@ async function flushPendingUploads() {
             console.warn("[Demo2Codex] Uploaded chunk could not be removed", error);
           }
         }
-        setConnectionStatus("online", "本地服务已连接");
+        setConnectionStatus("online", "已连接");
       } catch (error) {
         console.warn("[Demo2Codex] Audio remains queued", error);
-        setConnectionStatus("offline", "等待本地服务");
+        setConnectionStatus("offline", "连接中");
         break;
       }
     }
@@ -407,6 +542,7 @@ function appendTranscript(text, source) {
 
   elements.emptyTranscript?.remove();
   state.transcriptCount += 1;
+  elements.transcriptCountLabel.textContent = `${state.transcriptCount} 条`;
 
   const entry = document.createElement("article");
   entry.className = "transcript-entry";
@@ -419,11 +555,7 @@ function appendTranscript(text, source) {
   body.className = "transcript-body";
   body.textContent = cleaned;
 
-  const sourceLabel = document.createElement("span");
-  sourceLabel.className = "transcript-source";
-  sourceLabel.textContent = source === "speech" ? "浏览器识别" : "手动";
-
-  entry.append(time, body, sourceLabel);
+  entry.append(time, body);
   elements.transcriptList.append(entry);
   elements.transcriptList.scrollTop = elements.transcriptList.scrollHeight;
 
@@ -450,11 +582,11 @@ function configureSpeechRecognition() {
     state.speechEnabled = false;
     elements.speechToggle.checked = false;
     elements.speechToggle.disabled = true;
-    elements.speechSupportText.textContent = "当前浏览器不支持，请手动记录";
+    elements.speechSupportText.textContent = "不可用";
     return;
   }
 
-  elements.speechSupportText.textContent = "可随时关闭或改用手动记录";
+  elements.speechSupportText.textContent = "可用";
   const recognition = new Recognition();
   recognition.lang = language;
   recognition.continuous = true;
@@ -486,7 +618,7 @@ function configureSpeechRecognition() {
     if (event.error === "not-allowed" || event.error === "service-not-allowed") {
       state.speechEnabled = false;
       elements.speechToggle.checked = false;
-      toast("浏览器实时转写未获授权。录音仍在继续，你可以手动补充逐字稿。", "error");
+      toast("实时转写未获授权，录音仍会继续。", "error");
     }
   };
 
@@ -705,12 +837,13 @@ async function togglePause() {
 }
 
 function renderFinishedMessage() {
-  setRecordingStatus("finished", "评审已结束");
+  setRecordingStatus("finished", "已结束");
   elements.finishSpinner.classList.add("is-done");
-  elements.finishDialogTitle.textContent = "评审已提交整理";
-  elements.finishDialogText.textContent =
-    "录音和逐字稿已保存。你可以回到 Codex 查看评审总结与修改指令。";
+  elements.finishDialogTitle.textContent = "已保存";
+  elements.finishDialogText.textContent = "已保存，等待 Codex 生成结果。";
   elements.closeDialogButton.hidden = false;
+  showResultSection();
+  void refreshReviewResult();
 }
 
 async function submitFinishWhenAudioIsReady() {
@@ -813,13 +946,11 @@ async function refreshSessionState() {
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    setConnectionStatus("online", "本地服务已连接");
+    setConnectionStatus("online", "已连接");
 
     const activeId = data.sessionId || data.id || data.session?.id;
     const title = data.title || data.session?.title || data.projectName || "";
-    elements.sessionLabel.textContent = title
-      ? `${title} · 会话 ${sessionId.slice(0, 8)}`
-      : `会话 ${sessionId.slice(0, 12)}`;
+    elements.sessionLabel.textContent = title || "Demo 评审";
     if (!activeId || activeId === sessionId) {
       setFocusSummary(
         data.currentFocus ||
@@ -830,6 +961,10 @@ async function refreshSessionState() {
       );
     }
     const session = data.session || data;
+    if (session.status === "finished") {
+      showResultSection();
+      void refreshReviewResult();
+    }
     if (
       session.finish_requested_at &&
       !state.finishing &&
@@ -839,7 +974,7 @@ async function refreshSessionState() {
       void finishRecording();
     }
   } catch (error) {
-    setConnectionStatus("offline", navigator.onLine ? "等待本地服务" : "网络已断开");
+    setConnectionStatus("offline", navigator.onLine ? "连接中" : "离线");
   }
 }
 
@@ -868,18 +1003,18 @@ async function initialiseLocalBackup() {
   } catch (error) {
     console.warn("[Demo2Codex] IndexedDB is unavailable", error);
     state.db = null;
-    elements.backupStatus.textContent = "浏览器本地备份不可用";
+    elements.backupStatus.textContent = "备份不可用";
     toast("无法使用浏览器本地备份；录音仍可上传，但请不要刷新此页面。", "error");
   }
 }
 
 function validateSession() {
   if (sessionId && token) {
-    elements.sessionLabel.textContent = `会话 ${sessionId.slice(0, 12)}`;
+    elements.sessionLabel.textContent = "Demo 评审";
     return true;
   }
   elements.sessionLabel.textContent = "缺少会话凭证，请从 Codex 重新打开录音页";
-  setConnectionStatus("offline", "未连接会话");
+  setConnectionStatus("offline", "未连接");
   elements.startButton.disabled = true;
   toast("录音页 URL 缺少 session 或 token。", "error");
   return false;
@@ -889,18 +1024,28 @@ elements.startButton.addEventListener("click", startRecording);
 elements.pauseButton.addEventListener("click", togglePause);
 elements.finishButton.addEventListener("click", finishRecording);
 
-elements.manualTranscriptForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const text = elements.manualTranscript.value;
-  if (!text.trim()) return;
-  appendTranscript(text, "manual");
-  elements.manualTranscript.value = "";
-  elements.manualTranscript.focus();
+elements.addTodoButton.addEventListener("click", () => {
+  elements.todoList.append(createTodoItem());
+  state.resultDirty = true;
 });
 
-elements.manualTranscript.addEventListener("keydown", (event) => {
-  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-    elements.manualTranscriptForm.requestSubmit();
+elements.todoList.addEventListener("click", (event) => {
+  const remove = event.target.closest(".todo-remove");
+  if (!remove) return;
+  remove.closest(".todo-item")?.remove();
+  state.resultDirty = true;
+});
+
+elements.resultForm.addEventListener("input", () => {
+  state.resultDirty = true;
+});
+
+elements.resultForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    await saveReviewResult();
+  } catch (error) {
+    toast(error.message || "保存失败", "error");
   }
 });
 
@@ -908,22 +1053,22 @@ elements.speechToggle.addEventListener("change", () => {
   state.speechEnabled = elements.speechToggle.checked;
   if (state.speechEnabled) {
     startSpeechRecognition();
-    toast("浏览器实时转写已开启。它可能使用浏览器厂商的在线服务。");
+    toast("实时转写已开启。");
   } else {
     stopSpeechRecognition();
-    toast("浏览器实时转写已关闭；录音不受影响，可继续手动记录。");
+    toast("实时转写已关闭。");
   }
 });
 
 window.addEventListener("online", () => {
-  setConnectionStatus("neutral", "正在重新连接");
+  setConnectionStatus("neutral", "连接中");
   if (state.finishing) void retryDeferredFinish();
   else void flushPendingUploads();
   void refreshSessionState();
 });
 
 window.addEventListener("offline", () => {
-  setConnectionStatus("offline", "网络已断开");
+  setConnectionStatus("offline", "离线");
   void updateBackupStatus();
 });
 

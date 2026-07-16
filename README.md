@@ -1,31 +1,43 @@
 # Demo2Codex
 
-Demo2Codex captures local demo-review conversations and page-focus evidence, then lets the user's own Codex model inspect the repository and translate only the discussed changes into implementation tasks.
+Demo2Codex turns a demo conversation into focused Chinese TODOs grounded in the current repository.
 
-It is intentionally thin:
+The model does not guess where to start. A local deterministic index gives the user's active Codex model approximate page, feature, component, and repository-path clues. It does not provide line numbers, code excerpts, or exact edit instructions.
 
-- no hosted LLM;
-- no plugin-owned model key;
-- no server-side requirement generation;
-- no bundled Skill;
-- five narrow constraints that keep the model grounded in what the user actually said.
+The user flow has three stages:
 
-## Install from the Codex marketplace
+1. Start recording.
+2. View the read-only transcript when needed; it is collapsed by default.
+3. Edit the Chinese meeting summary and TODOs.
+
+Each TODO is one short instruction, similar to a prompt the user would write directly to Codex. Code information stays out of the TODO text. A small location icon reveals the approximate module on hover.
+
+Demo2Codex has no hosted LLM, publisher model key, or bundled Skill. Interpretation and code inspection use the model and account already selected by the user in Codex.
+
+## Install
 
 ```bash
 codex plugin marketplace add Gusgoooo/demo2codex
 codex plugin add demo2codex@demo2codex
 ```
 
-Start a new Codex task after installation, open the repository you want to review, type `@Demo2Codex` so Codex inserts the plugin mention, and ask:
+Open the repository in Codex and ask:
 
 ```text
 @Demo2Codex Start a demo review for this repository.
 ```
 
-Demo2Codex exposes the recorder workflow through both custom MCP tools and standard MCP resources. If Codex defers the custom tools, it can still start the review through `demo2codex://start-review`; missing custom tools alone must not trigger a reinstall error.
+The recorder actions are exposed as both MCP tools and standard MCP resources, so the workflow can still start when custom tools are deferred.
 
-See [the plugin README](./plugins/demo2codex/README.md) for usage, privacy, migration, and development details.
+## Grounding rules
+
+Demo2Codex keeps the model focused with five constraints:
+
+1. Only create TODOs supported by captured discussion.
+2. Add only details needed to implement and verify the stated change.
+3. Do not expand beyond the mentioned page, element, or behavior.
+4. Keep material ambiguity as an open question.
+5. Use the module index to inspect the real code, then write a short Chinese TODO without code details.
 
 ## Repository layout
 
@@ -39,21 +51,9 @@ plugins/demo2codex/
   tests/
 ```
 
-## How task generation stays focused
-
-When a review finishes, Demo2Codex returns raw transcript, notes, page-focus segments, repository context, and these constraints:
-
-1. Every task needs meeting evidence.
-2. Only implementation- and verification-critical details may be added.
-3. Scope stays on the mentioned page, element, and behavior.
-4. Material ambiguity becomes an open question.
-5. Codex must inspect the real repository and avoid unrelated changes.
-
-The active Codex model performs all semantic interpretation and code analysis.
-
 ## Migrating from Meeting2Prompt
 
-The product and plugin ID changed in v0.3.0. Remove the old installation before installing Demo2Codex so a stale Meeting2Prompt skill cannot intercept the request:
+Remove the old plugin before installing Demo2Codex:
 
 ```bash
 codex plugin remove meeting2prompt@personal
@@ -62,6 +62,4 @@ codex plugin marketplace add Gusgoooo/demo2codex
 codex plugin add demo2codex@demo2codex
 ```
 
-Remove whichever old selector exists; a “not installed” error for the other selector is harmless. Then run `codex plugin list` and confirm that only `demo2codex@demo2codex` remains for this product before starting a new Codex task.
-
-Existing review sessions under `.meeting2prompt/` remain readable; new sessions are stored under `.demo2codex/`.
+Existing sessions under `.meeting2prompt/` remain readable. New sessions are stored under `.demo2codex/`.

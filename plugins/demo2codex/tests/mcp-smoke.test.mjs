@@ -14,7 +14,10 @@ async function makeFixture() {
   await mkdir(path.join(repoPath, "src"), { recursive: true });
   await writeFile(path.join(repoPath, "package.json"), JSON.stringify({ name: "mcp-fixture", scripts: { dev: "vite" } }));
   await writeFile(path.join(repoPath, "index.html"), "<!doctype html><html><body><main id=\"app\"></main></body></html>\n");
-  await writeFile(path.join(repoPath, "src", "main.tsx"), "export {};\n");
+  await writeFile(
+    path.join(repoPath, "src", "main.tsx"),
+    "export function ReviewPage(){return <button id=\"primary\">主按钮</button>}\n",
+  );
   return repoPath;
 }
 
@@ -86,6 +89,7 @@ test("MCP exposes four thin tools and completes a local review", { timeout: 20_0
   });
   const started = JSON.parse(startedResource.contents[0].text);
   assert.equal(started.repository.name, "mcp-fixture");
+  assert.ok(started.repository.context.languages.some((language) => language.name === "TypeScript"));
   assert.equal(started.bridge.installed, true);
   assert.equal(started.translation_constraints.length, 5);
   const indexHtml = await readFile(path.join(repoPath, "index.html"), "utf8");
@@ -101,6 +105,18 @@ test("MCP exposes four thin tools and completes a local review", { timeout: 20_0
   assert.ok(bridgeKey);
 
   const origin = recorderUrl.origin;
+  const recorderPage = await fetch(`${origin}/`).then((response) => response.text());
+  assert.match(recorderPage, /<details class="card transcript-card">/);
+  assert.doesNotMatch(recorderPage, /<details[^>]*\sopen(?:\s|>)/);
+  assert.doesNotMatch(recorderPage, /手动补充|手动记录/);
+  const recorderStyles = await fetch(`${origin}/styles.css`).then((response) => response.text());
+  assert.match(recorderStyles, /--radius:\s*0\.625rem/);
+  assert.match(recorderStyles, /--background:\s*oklch/);
+  assert.doesNotMatch(recorderStyles, /linear-gradient|radial-gradient/);
+  const recorderScript = await fetch(`${origin}/app.js`).then((response) => response.text());
+  assert.match(recorderScript, /查看大概模块位置/);
+  assert.match(recorderScript, /task\.module_hint/);
+
   const missingBridgeKeyResponse = await fetch(`${origin}/api/active-session`, {
     headers: { Origin: "http://localhost:5173" },
   });
@@ -194,19 +210,99 @@ test("MCP exposes four thin tools and completes a local review", { timeout: 20_0
   assert.equal(finished.transcript[0].text, "把主按钮的层级提高。");
   assert.equal(finished.focus_segments[0].focus_id, "focus-smoke");
   assert.equal(finished.focus_segments[0].focus.source, "src/main.tsx");
+  assert.equal(finished.code_context.focus_mappings[0].location_status, "exact");
+  assert.deepEqual(finished.code_context.focus_mappings[0].module_candidates[0].paths, ["src/main.tsx"]);
+  assert.equal(finished.code_context.focus_mappings[0].module_candidates[0].location, undefined);
+  assert.ok(finished.grounding_contract.internal_grounding_fields.includes("meeting_evidence"));
   assert.equal(finished.translation_constraints.length, 5);
   assert.equal((await readFile(finished.audio_file)).toString(), "smoke-audio");
+  assert.equal(finished.result_submission.method, "POST");
+  assert.match(finished.result_submission.url, new RegExp(`/api/sessions/${sessionId}/result\\?token=`));
+  assert.match(finished.result_submission.instruction, /do not create a manual session/i);
+  const storedEvidence = JSON.parse(await readFile(finished.evidence_files.evidence, "utf8"));
+  assert.equal(storedEvidence.result_submission, undefined);
+
+  const fallbackSaveResponse = await fetch(finished.result_submission.url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      review_summary: "只提高当前页面主按钮的视觉层级。",
+      tasks: [{
+        id: "todo-fallback",
+        content: "把当前页面的主按钮做得更突出。",
+        grounding: {
+          meeting_evidence: ["focus-smoke", "把主按钮的层级提高。"],
+          module_candidates: [{ module: "ReviewPage", paths: ["src/main.tsx:18"] }],
+          scope: "只调整当前页面主按钮的视觉层级。",
+          acceptance_criteria: ["主按钮比相邻操作更突出。"],
+          open_questions: [],
+        },
+      }],
+    }),
+  });
+  assert.equal(fallbackSaveResponse.status, 200);
+  const fallbackSaved = await fallbackSaveResponse.json();
+  assert.deepEqual(fallbackSaved.result.tasks[0].module_hint, {
+    label: "ReviewPage",
+    paths: ["src/main.tsx"],
+  });
 
   const savedCall = await rpc("tools/call", {
     name: "save_review_result",
     arguments: {
       session_id: sessionId,
-      review_summary: "# Review summary\n\nRaise the primary button hierarchy only.\n",
-      tasks: [{ title: "Raise the primary button hierarchy", evidence: ["把主按钮的层级提高。"] }],
+      review_summary: "只提高当前页面主按钮的视觉层级。",
+      tasks: [{
+        id: "todo-primary",
+        content: "把当前页面的主按钮做得更突出。",
+        grounding: {
+          meeting_evidence: ["focus-smoke", "把主按钮的层级提高。"],
+          module_candidates: [{ module: "ReviewPage", paths: ["src/main.tsx"] }],
+          scope: "只调整当前页面主按钮的视觉层级。",
+          acceptance_criteria: ["主按钮比相邻操作更突出。"],
+          open_questions: [],
+        },
+      }],
     },
   });
   assert.equal(savedCall.isError, false);
   assert.deepEqual(JSON.parse(await readFile(savedCall.structuredContent.files.tasks, "utf8")), [
-    { title: "Raise the primary button hierarchy", evidence: ["把主按钮的层级提高。"] },
+    {
+      id: "todo-primary",
+      content: "把当前页面的主按钮做得更突出。",
+      module_hint: {
+        label: "ReviewPage",
+        paths: ["src/main.tsx"],
+      },
+    },
   ]);
+
+  const resultResponse = await fetch(`${origin}/api/sessions/${sessionId}/result?token=${encodeURIComponent(token)}`);
+  assert.equal(resultResponse.status, 200);
+  const publicResult = await resultResponse.json();
+  assert.equal(publicResult.tasks[0].content, "把当前页面的主按钮做得更突出。");
+  assert.equal(publicResult.tasks[0].grounding, undefined);
+  assert.deepEqual(publicResult.tasks[0].module_hint, {
+    label: "ReviewPage",
+    paths: ["src/main.tsx"],
+  });
+
+  const editedResponse = await fetch(`${origin}/api/sessions/${sessionId}/result?token=${encodeURIComponent(token)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      review_summary: "只修改当前页面的主按钮。",
+      tasks: [{
+        id: "todo-primary",
+        content: "提高当前页面主按钮的视觉层级。",
+        module_hint: { label: "客户端不能覆盖", paths: ["wrong.ts"] },
+      }],
+    }),
+  });
+  assert.equal(editedResponse.status, 200);
+  const editedResult = await editedResponse.json();
+  assert.deepEqual(editedResult.tasks[0].module_hint, {
+    label: "ReviewPage",
+    paths: ["src/main.tsx"],
+  });
 });
