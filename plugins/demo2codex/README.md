@@ -38,6 +38,7 @@ The recorder result API exposes only the Chinese summary, TODO content, and a co
 - `save_review_result`
 
 Equivalent standard MCP resources are available for start, status, and finish when custom tools are deferred.
+If both the tool and resource surfaces are unavailable, stop instead of auditing, building, running, or editing the repository.
 
 When `save_review_result` is deferred, `finish_review` returns a token-scoped local `result_submission` URL. Codex can POST the same JSON payload to that URL, so a missing custom-tool surface never requires fallback session scripts or reinstalling the plugin.
 
