@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 async function makeFixture() {
-  const repoPath = await mkdtemp(path.join(os.tmpdir(), "meeting2prompt-mcp-"));
+  const repoPath = await mkdtemp(path.join(os.tmpdir(), "demo2codex-mcp-"));
   await mkdir(path.join(repoPath, "src"), { recursive: true });
   await writeFile(path.join(repoPath, "package.json"), JSON.stringify({ name: "mcp-fixture", scripts: { dev: "vite" } }));
   await writeFile(path.join(repoPath, "index.html"), "<!doctype html><html><body><main id=\"app\"></main></body></html>\n");
@@ -44,8 +44,8 @@ test("MCP exposes four thin tools and completes a local review", { timeout: 20_0
     cwd: pluginRoot,
     env: {
       ...process.env,
-      MEETING2PROMPT_PORT: "0",
-      MEETING2PROMPT_REGISTRY: path.join(repoPath, ".meeting2prompt-test-registry.json"),
+      DEMO2CODEX_PORT: "0",
+      DEMO2CODEX_REGISTRY: path.join(repoPath, ".demo2codex-test-registry.json"),
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -56,7 +56,9 @@ test("MCP exposes four thin tools and completes a local review", { timeout: 20_0
   const rpc = rpcClient(child);
 
   const initialized = await rpc("initialize", { protocolVersion: "2025-11-25", capabilities: {} });
-  assert.equal(initialized.serverInfo.name, "meeting2prompt");
+  assert.equal(initialized.serverInfo.name, "demo2codex");
+  assert.equal(initialized.capabilities.resources.listChanged, false);
+  assert.match(initialized.instructions, /read demo2codex:\/\/start-review/i);
   const listed = await rpc("tools/list");
   assert.deepEqual(listed.tools.map((tool) => tool.name), [
     "start_review",
@@ -66,12 +68,23 @@ test("MCP exposes four thin tools and completes a local review", { timeout: 20_0
   ]);
   assert.equal(listed.tools[1].annotations.readOnlyHint, true);
 
-  const startedCall = await rpc("tools/call", {
-    name: "start_review",
-    arguments: { repo_path: repoPath, title: "MCP smoke review", demo_url: "http://localhost:5173" },
+  const listedResources = await rpc("resources/list");
+  assert.deepEqual(listedResources.resources.map((resource) => resource.uri), [
+    "demo2codex://start-review",
+    "demo2codex://review-status",
+    "demo2codex://finish-review",
+  ]);
+  const listedTemplates = await rpc("resources/templates/list");
+  assert.equal(listedTemplates.resourceTemplates.length, 3);
+
+  const startUri = new URL("demo2codex://start-review");
+  startUri.searchParams.set("repo_path", repoPath);
+  startUri.searchParams.set("title", "MCP resource smoke review");
+  startUri.searchParams.set("demo_url", "http://localhost:5173");
+  const startedResource = await rpc("resources/read", {
+    uri: startUri.toString(),
   });
-  assert.equal(startedCall.isError, false);
-  const started = startedCall.structuredContent;
+  const started = JSON.parse(startedResource.contents[0].text);
   assert.equal(started.repository.name, "mcp-fixture");
   assert.equal(started.bridge.installed, true);
   assert.equal(started.translation_constraints.length, 5);
@@ -150,16 +163,19 @@ test("MCP exposes four thin tools and completes a local review", { timeout: 20_0
   });
   assert.equal(recordingStateResponse.status, 202);
 
-  const finishedCallPromise = rpc("tools/call", {
-    name: "finish_review",
-    arguments: { session_id: sessionId },
+  const finishUri = new URL("demo2codex://finish-review");
+  finishUri.searchParams.set("session_id", sessionId);
+  const finishedResourcePromise = rpc("resources/read", {
+    uri: finishUri.toString(),
   });
   await new Promise((resolve) => setTimeout(resolve, 100));
-  const finishingStatus = await rpc("tools/call", {
-    name: "review_status",
-    arguments: { session_id: sessionId },
+  const statusUri = new URL("demo2codex://review-status");
+  statusUri.searchParams.set("session_id", sessionId);
+  const finishingStatusResource = await rpc("resources/read", {
+    uri: statusUri.toString(),
   });
-  assert.ok(finishingStatus.structuredContent.finish_requested_at);
+  const finishingStatus = JSON.parse(finishingStatusResource.contents[0].text);
+  assert.ok(finishingStatus.finish_requested_at);
   const stoppedStateResponse = await fetch(`${origin}/api/sessions/${sessionId}/events?token=${encodeURIComponent(token)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Origin: "http://localhost:5173" },
@@ -173,9 +189,8 @@ test("MCP exposes four thin tools and completes a local review", { timeout: 20_0
   });
   assert.equal(recorderFinishResponse.status, 200);
 
-  const finishedCall = await finishedCallPromise;
-  assert.equal(finishedCall.isError, false);
-  const finished = finishedCall.structuredContent;
+  const finishedResource = await finishedResourcePromise;
+  const finished = JSON.parse(finishedResource.contents[0].text);
   assert.equal(finished.transcript[0].text, "把主按钮的层级提高。");
   assert.equal(finished.focus_segments[0].focus_id, "focus-smoke");
   assert.equal(finished.focus_segments[0].focus.source, "src/main.tsx");
@@ -186,7 +201,7 @@ test("MCP exposes four thin tools and completes a local review", { timeout: 20_0
     name: "save_review_result",
     arguments: {
       session_id: sessionId,
-      meeting_summary: "# Review summary\n\nRaise the primary button hierarchy only.\n",
+      review_summary: "# Review summary\n\nRaise the primary button hierarchy only.\n",
       tasks: [{ title: "Raise the primary button hierarchy", evidence: ["把主按钮的层级提高。"] }],
     },
   });

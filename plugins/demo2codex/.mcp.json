@@ -1,7 +1,7 @@
 {
   "mcpServers": {
-    "meeting2prompt": {
-      "title": "Meeting2Prompt",
+    "demo2codex": {
+      "title": "Demo2Codex",
       "description": "Capture local demo-review transcripts and page-focus evidence for the user's active Codex model.",
       "command": "node",
       "args": [

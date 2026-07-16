@@ -1,4 +1,5 @@
 .DS_Store
 .meeting2prompt/
+.demo2codex/
 node_modules/
 npm-debug.log*
